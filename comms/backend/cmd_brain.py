@@ -9,7 +9,7 @@ import os
 import shutil
 import subprocess
 
-VAULT = r"C:/Users/User/Aiprojects/obsi_comp"
+VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 
 COMMANDS = {
     "עומרי": "/omri",
