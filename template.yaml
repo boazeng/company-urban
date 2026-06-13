@@ -113,6 +113,8 @@ Resources:
           PRIORITY_URL_REAL: !Ref PriorityUrlReal
           PRIORITY_USERNAME: !Ref PriorityUsername
           PRIORITY_PASSWORD: !Ref PriorityPassword
+          SERVICE_CALL_WRITER_ENABLED: "true"
+          BOT_SERVICE_CALL_WRITER_MODULE: priority_connectors.service_call_writer
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref GuyScriptsTable
