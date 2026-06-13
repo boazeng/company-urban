@@ -32,6 +32,11 @@ function NodeCard({ node, root, staff }) {
         </>
       )}
       {node.purpose && <span className="node-purpose">{node.purpose}</span>}
+      {node.link && (
+        <a className="node-link" href={node.link} target="_blank" rel="noopener noreferrer">
+          🔧 עורך התסריט
+        </a>
+      )}
     </div>
   )
 }
@@ -109,6 +114,7 @@ export default function StructurePage() {
   const cParent = colIndex(headers, 'כפוף')
   const cPurpose = colIndex(headers, 'מטרה')
   const cType = colIndex(headers, 'סוג')
+  const cLink = colIndex(headers, 'קישור')
 
   const nodes = rows.map((r) => ({
     name: r[cName],
@@ -118,6 +124,7 @@ export default function StructurePage() {
     parent: cParent >= 0 ? r[cParent] : '',
     purpose: cPurpose >= 0 ? r[cPurpose] : '',
     type: cType >= 0 ? r[cType] : '',
+    link: cLink >= 0 ? r[cLink] : '',
   }))
 
   const byName = {}
