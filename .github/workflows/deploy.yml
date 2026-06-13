@@ -57,10 +57,10 @@ jobs:
             --resolve-s3 \
             --parameter-overrides \
               Stage=${{ env.STAGE }} \
-              WhatsAppPhoneNumberId="${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" \
-              WhatsAppAccessToken="${{ secrets.WHATSAPP_ACCESS_TOKEN }}" \
+              WhatsAppPhoneNumberId="${{ secrets.WHATSAPP_PHONE_NUMBER_ID || 'not-configured' }}" \
+              WhatsAppAccessToken="${{ secrets.WHATSAPP_ACCESS_TOKEN || 'not-configured' }}" \
               WhatsAppVerifyToken="${{ secrets.WHATSAPP_VERIFY_TOKEN || 'company-urban-verify' }}" \
-              OpenAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+              OpenAiApiKey="${{ secrets.OPENAI_API_KEY || 'not-configured' }}" \
               RoutingScriptId="guy-parking-service"
 
       # ── Build the dashboard (Vite bakes in the vault markdown) ──
