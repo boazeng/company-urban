@@ -5,7 +5,24 @@ Every push to `main` builds and deploys automatically (OIDC — no stored AWS ke
 
 - **Region:** `us-east-1`
 - **Stack:** `company-urban-stack`
-- **DNS/domain:** chosen later via Cloudflare → points at the CloudFront URL.
+- **Domain:** `company-urban.newavera.co.il` (Cloudflare).
+
+## Domain — Cloudflare proxied (recommended, no AWS changes)
+
+After the stack is deployed, take the `CloudFrontUrl` output (`dXXXX.cloudfront.net`)
+and add ONE record in Cloudflare on the `newavera.co.il` zone:
+
+| Type  | Name           | Target                  | Proxy      |
+|-------|----------------|-------------------------|------------|
+| CNAME | `company-urban`| `dXXXX.cloudfront.net`  | 🟠 Proxied |
+
+Set Cloudflare SSL/TLS mode to **Full (strict)**. Cloudflare terminates TLS for
+`company-urban.newavera.co.il` and forwards to CloudFront — no ACM cert or
+CloudFront Alias needed (CloudFront serves on its `*.cloudfront.net` SNI).
+
+_Alternative (single, native CDN):_ request an ACM cert for the domain in
+`us-east-1`, add `Aliases` + `ViewerCertificate` to the CloudFront distribution
+in `template.yaml`, and use a **DNS-only** (grey-cloud) CNAME instead.
 
 ## Architecture (phased)
 
