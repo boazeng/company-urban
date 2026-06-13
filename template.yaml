@@ -26,6 +26,18 @@ Parameters:
     Type: String
     NoEcho: true
     Default: ""
+  PriorityUrlReal:
+    Type: String
+    NoEcho: true
+    Default: ""
+  PriorityUsername:
+    Type: String
+    NoEcho: true
+    Default: ""
+  PriorityPassword:
+    Type: String
+    NoEcho: true
+    Default: ""
   RoutingScriptId:
     Type: String
     Default: "guy-parking-service"
@@ -96,6 +108,11 @@ Resources:
           WHATSAPP_ACCESS_TOKEN: !Ref WhatsAppAccessToken
           WHATSAPP_VERIFY_TOKEN: !Ref WhatsAppVerifyToken
           OPENAI_API_KEY: !Ref OpenAiApiKey
+          EQUIPMENT_READER_ENABLED: "true"
+          BOT_EQUIPMENT_READER_MODULE: priority_connectors.equipment_reader
+          PRIORITY_URL_REAL: !Ref PriorityUrlReal
+          PRIORITY_USERNAME: !Ref PriorityUsername
+          PRIORITY_PASSWORD: !Ref PriorityPassword
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref GuyScriptsTable

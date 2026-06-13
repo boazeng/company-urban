@@ -61,6 +61,9 @@ jobs:
               WhatsAppAccessToken="${{ secrets.WHATSAPP_ACCESS_TOKEN || 'not-configured' }}" \
               WhatsAppVerifyToken="${{ secrets.WHATSAPP_VERIFY_TOKEN || 'company-urban-verify' }}" \
               OpenAiApiKey="${{ secrets.OPENAI_API_KEY || 'not-configured' }}" \
+              PriorityUrlReal="${{ secrets.PRIORITY_URL_REAL || 'not-configured' }}" \
+              PriorityUsername="${{ secrets.PRIORITY_USERNAME || 'not-configured' }}" \
+              PriorityPassword="${{ secrets.PRIORITY_PASSWORD || 'not-configured' }}" \
               RoutingScriptId="guy-parking-service"
 
       # ── Build the dashboard (Vite bakes in the vault markdown) ──
