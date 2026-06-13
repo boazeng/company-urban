@@ -1,21 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { AGENT_ROLES as ROLE_LABELS } from '../lib/agents'
 import './CommsPage.css'
 
 // dev → local backend; production build → comms on the box via Cloudflare Tunnel
 const API = import.meta.env.DEV ? 'http://localhost:5181' : 'https://comms.newavera.co.il'
-
-// Short role label per agent, shown next to the name in the room picker.
-// Kept in the frontend so the labels work without depending on a backend deploy;
-// the backend's /agents.roles (if present) takes precedence and overrides these.
-const ROLE_LABELS = {
-  'רונית': 'סמנכ״לית שיווק',
-  'רן': 'עוזר אישי ומרכזן',
-  'מנכ״ל': 'CEO',
-  'סמנכ״ל כספים': 'CFO',
-  'סמנכ״ל תפעול': 'COO',
-  'עומרי': 'ניטור מתקני חניה',
-  'גיא': 'שירות לקוחות חניה',
-}
 
 export default function CommsPage() {
   const [rooms, setRooms] = useState([])

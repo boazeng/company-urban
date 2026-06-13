@@ -10,6 +10,7 @@ const navItems = [
   { path: '/goals', label: 'יעדים' },
   { path: '/comms', label: 'תקשורת' },
   { path: '/interfaces', label: 'ממשקים' },
+  { path: '/admin', label: 'ניהול מערכת' },
 ]
 
 export default function Header() {
