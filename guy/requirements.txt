@@ -1,0 +1,9 @@
+# Lambda runtime deps for Guy's WhatsApp webhook (built on the Linux CI runner).
+# uvicorn is intentionally omitted — Mangum drives the ASGI app on Lambda.
+fastapi==0.115.0
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+requests==2.32.3
+boto3==1.35.36
+mangum==0.19.0

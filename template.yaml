@@ -2,14 +2,33 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Agent Company (company-urban) — dashboard + agent services
 
-# Phase A: the dashboard (static Vite/React) on S3 + CloudFront.
-# comms backend (FastAPI on Lambda) and Guy's WhatsApp webhook are added in
-# later phases as AWS::Serverless::Function resources + an ApiOrigin behavior.
+# Phase A: dashboard (static Vite/React) on S3 + CloudFront.
+# Phase B: Guy's WhatsApp webhook (FastAPI via Mangum) on Lambda + DynamoDB,
+#          reachable at /api/whatsapp/* via the same CloudFront/HTTP API.
 
 Parameters:
   Stage:
     Type: String
     Default: prod
+  WhatsAppPhoneNumberId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  WhatsAppAccessToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+  WhatsAppVerifyToken:
+    Type: String
+    NoEcho: true
+    Default: "company-urban-verify"
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  RoutingScriptId:
+    Type: String
+    Default: "guy-parking-service"
 
 Resources:
 
@@ -35,6 +54,179 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
 
+  # ── API Gateway (HTTP API) ──────────────────────────
+  ApiGateway:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+
+  # ── Guy — WhatsApp webhook Lambda (FastAPI + Mangum) ─
+  GuyWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub company-urban-guy-${Stage}
+      CodeUri: ./guy/
+      Handler: lambda_handler.handler
+      Runtime: python3.13
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          STORAGE_BACKEND: dynamodb
+          BOT_SCRIPTS_TABLE: !Ref GuyScriptsTable
+          TROUBLESHOOT_SESSIONS_TABLE: !Ref GuySessionsTable
+          MESSAGES_TABLE: !Ref GuyMessagesTable
+          SERVICE_CALLS_TABLE: !Ref GuyServiceCallsTable
+          BOT_PROMPTS_TABLE: !Ref GuyPromptsTable
+          ROUTING_SCRIPT_ID: !Ref RoutingScriptId
+          WHATSAPP_PHONE_NUMBER_ID: !Ref WhatsAppPhoneNumberId
+          WHATSAPP_ACCESS_TOKEN: !Ref WhatsAppAccessToken
+          WHATSAPP_VERIFY_TOKEN: !Ref WhatsAppVerifyToken
+          OPENAI_API_KEY: !Ref OpenAiApiKey
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GuyScriptsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GuySessionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GuyMessagesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GuyServiceCallsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GuyPromptsTable
+      Events:
+        Whatsapp:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ApiGateway
+            Path: /api/whatsapp/{proxy+}
+            Method: ANY
+        Health:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ApiGateway
+            Path: /api/health
+            Method: GET
+
+  # ── DynamoDB tables (Guy bot engine) ────────────────
+  GuyScriptsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub company-urban-bot-scripts-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: script_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: script_id
+          KeyType: HASH
+
+  GuySessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub company-urban-sessions-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: phone
+          AttributeType: S
+      KeySchema:
+        - AttributeName: phone
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  GuyMessagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub company-urban-messages-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: phone
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: phone-created_at-index
+          KeySchema:
+            - AttributeName: phone
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  GuyServiceCallsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub company-urban-service-calls-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: phone
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-created_at-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: phone-created_at-index
+          KeySchema:
+            - AttributeName: phone
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  GuyPromptsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub company-urban-prompts-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: prompt_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: prompt_id
+          KeyType: HASH
+
   # ── CloudFront (CDN + TLS) ──────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl
@@ -59,11 +251,26 @@ Resources:
             OriginAccessControlId: !GetAtt CloudFrontOAC.Id
             S3OriginConfig:
               OriginAccessIdentity: ""
+          - Id: ApiOrigin
+            DomainName: !Sub ${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+            OriginPath: !Sub /${Stage}
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           ViewerProtocolPolicy: redirect-to-https
-          # Managed-CachingOptimized policy
+          # Managed-CachingOptimized
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            # Managed-CachingDisabled + Managed-AllViewerExceptHostHeader
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
         CustomErrorResponses:
           # SPA routing — serve index.html for client-side routes
           - ErrorCode: 403
@@ -83,3 +290,9 @@ Outputs:
   FrontendBucketName:
     Description: S3 bucket holding the built dashboard
     Value: !Ref FrontendBucket
+  ApiUrl:
+    Description: HTTP API base URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+  GuyWebhookUrl:
+    Description: WhatsApp webhook URL for Guy (configure in Meta)
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/api/whatsapp/webhook

@@ -53,6 +53,32 @@ After that, every push to `main` deploys automatically.
 > The first deploy was run locally with the account owner's credentials, so the
 > site is already live; the secret only enables hands-off auto-deploy.
 
+## Phase B — Guy's WhatsApp webhook
+
+Deployed by the same SAM stack: a Python Lambda (`guy/` via `lambda_handler.py`
++ Mangum) behind the HTTP API at **`/api/whatsapp/webhook`**, with 5 DynamoDB
+tables (`company-urban-{bot-scripts,sessions,messages,service-calls,prompts}-prod`).
+
+> The Guy Lambda has a binary dep (pydantic-core) → it must be built on Linux.
+> Deploy it **via GitHub Actions** (the ubuntu runner builds correct wheels),
+> not a local Windows `sam build`. (Locally you'd need `sam build --use-container`
+> with Docker running.)
+
+WhatsApp secrets (add to the repo's Actions secrets when ready to cut over):
+
+- `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`
+  (the existing maintenance number), optional `OPENAI_API_KEY`.
+
+Remaining steps to make Guy answer (after the stack is deployed):
+
+1. **Seed** the `guy-parking-service` script into `company-urban-bot-scripts-prod`
+   (one-time; from the local script source via `guy/seed_guy.py` against DynamoDB).
+2. **Set** the WhatsApp secrets above and redeploy.
+3. **Cut over** the Meta webhook for the maintenance number to
+   `GuyWebhookUrl` (stack output) — this moves the number from urbangroup to Guy.
+4. **Priority ERP** (real service calls) — port the connector behind Guy's
+   pluggable integration flags (`EQUIPMENT_READER_*`, `SERVICE_CALL_WRITER_*`).
+
 ## Deploy
 
 Automatic on push to `main`. To run the steps manually:
