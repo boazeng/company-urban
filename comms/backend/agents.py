@@ -65,7 +65,14 @@ def _brain(agent):
         return _loaded[agent]
     fn = None
     if agent in BESPOKE:
-        fn = _load(BESPOKE[agent], f"brain_{len(_loaded)}").chat
+        path = BESPOKE[agent]
+        if not os.path.exists(path):
+            # Don't cache: a later sync should recover without a code change here.
+            return lambda history, room_id=None: (
+                f"(המוח של {agent} לא נמצא בשרת — צריך לסנכרן את כל comms/backend "
+                f"ולהפעיל מחדש את ה-backend. [{path}])"
+            )
+        fn = _load(path, f"brain_{len(_loaded)}").chat
     elif exec_brain.has_profile(agent):
         fn = exec_brain.make_chat(agent)
     elif cmd_brain.has_agent(agent):
