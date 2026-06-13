@@ -275,8 +275,8 @@ uvicorn app:app --port 5181 --reload</pre>
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKey}
-              placeholder="כתוב הודעה… (Enter לשליחה · @שם לפנייה ממוקדת)"
-              rows={1}
+              placeholder="כתוב הודעה… (Enter לשליחה · Shift+Enter לשורה חדשה · @שם לפנייה ממוקדת)"
+              rows={4}
             />
             <button className="comms-send" onClick={send} disabled={busy || !draft.trim()}>שלח</button>
           </div>
