@@ -16,11 +16,13 @@ import exec_brain
 import cmd_brain
 
 VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 
 BESPOKE = {
     "רונית": rf"{VAULT}/Agents/marketing - cmo/RONIT/ronit_core.py",
     "רן": rf"{VAULT}/Agents/מנכ״ל/רן/ran_core.py",  # העוזר האישי + מרכזן (Front Door)
-    "זובין": rf"{VAULT}/Agents/מנכ״ל/זובין/zubin_core.py",  # שיחה על הלוח + פעימת /conductor לפי בקשה
+    # זובין — מוח comms-local: יושב ליד agents.py כך שתמיד נפרס עם ה-backend (נתיב ASCII, ללא שבריריות נתיב עברי)
+    "זובין": rf"{_BACKEND_DIR}/zubin_core.py",  # שיחה על הלוח + פעימת /conductor לפי בקשה
     # future bespoke cores: "סמנכ״ל כספים": ".../cfo_core.py", ...
 }
 
