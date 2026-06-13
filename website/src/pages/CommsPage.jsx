@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import './CommsPage.css'
 
-const API = 'http://localhost:5181'
+// dev → local backend; production build → comms on the box via Cloudflare Tunnel
+const API = import.meta.env.DEV ? 'http://localhost:5181' : 'https://comms.newavera.co.il'
 
 export default function CommsPage() {
   const [rooms, setRooms] = useState([])
