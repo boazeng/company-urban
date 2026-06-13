@@ -12,13 +12,29 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime
 
 import requests
+
+try:  # שעון ישראל — נכון בלי תלות באזור-הזמן של השרת (הבוקס לרוב UTC)
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo("Asia/Jerusalem")
+except Exception:  # noqa: BLE001 — אם tzdata חסר, ניפול לשעון המקומי
+    _TZ = None
 
 VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 SHARED_ENV = os.environ.get("SHARED_ENV", r"C:/Users/User/Aiprojects/env/.env")
 SCHEDULE_PATH = rf"{VAULT}/schedule/Schedule.md"
 MODEL = "claude-sonnet-4-6"
+
+# Python weekday(): שני=0 ... ראשון=6. השבוע העברי מתחיל בראשון.
+_HEB_DAYS = {6: "ראשון", 0: "שני", 1: "שלישי", 2: "רביעי", 3: "חמישי", 4: "שישי", 5: "שבת"}
+
+
+def _now_str():
+    now = datetime.now(_TZ) if _TZ else datetime.now()
+    tz = " (שעון ישראל)" if _TZ else ""
+    return f"{now:%Y-%m-%d %H:%M}, יום {_HEB_DAYS[now.weekday()]}{tz}"
 
 # כוונת "הרץ פעימה עכשיו" — פעלי-פעולה מפורשים בלבד, לא שאלות.
 # הפועל ואז עד 2 מילים ואז מילת מפתח (כדי לתפוס גם "תפעיל את התור").
@@ -47,7 +63,8 @@ SYSTEM = (
     "מתוזמן מתי, לנתח את הלוח, להמליץ על שינויי תזמון, ולומר מה צפוי לרוץ. עיקרון-על: "
     "אדם-בלולאה — אתה ממליץ, בועז מחליט. **אל תמציא** שורות לוח זמנים; התבסס אך ורק על "
     "לוח הזמנים שמצורף למטה. אם מבקשים ממך להריץ פעימה בפועל — אמור שתריץ; המערכת מפעילה "
-    "את הפעימה בנפרד.\n\n=== לוח הזמנים הנוכחי (schedule/Schedule.md) ===\n{schedule}"
+    "את הפעימה בנפרד. כשנשאל על 'עכשיו'/'מחר'/'היום' — חשב לפי הזמן הנוכחי שמצורף.\n\n"
+    "=== הזמן הנוכחי ===\n{now}\n\n=== לוח הזמנים הנוכחי (schedule/Schedule.md) ===\n{schedule}"
 )
 
 
@@ -96,7 +113,7 @@ def chat(history, room_id=None):  # room_id לחתימה אחידה
         messages.pop(0)
     if not messages:
         return "לא קיבלתי הודעה."
-    system = SYSTEM.format(schedule=_schedule_text())
+    system = SYSTEM.format(now=_now_str(), schedule=_schedule_text())
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
