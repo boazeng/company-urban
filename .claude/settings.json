@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Google/Chrome/Application/**)",
+      "Bash(py --version)",
+      "Bash(pandoc --version)",
+      "Bash(wkhtmltopdf --version)",
+      "Bash(ls -la /c/Users/User/Aiprojects/urbangroup)",
+      "Read(//c/Users/User/Aiprojects/urbangroup/**)"
+    ]
+  }
+}

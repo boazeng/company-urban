@@ -1,0 +1,403 @@
+"""רן — בוט Telegram אישי. 4 כפתורים, מחובר ל-API של BoazTask (Bearer RAN_TOKEN).
+
+כפתורים:
+  ➕ מטלה חדשה   — איסוף פרטים שלב-שלב ויצירת מטלה
+  ⚡ מטלה מהירה  — טקסט חופשי → רן מנתח (Claude) ויוצר מטלה מובנית
+  ⚡ מטלות מיידיות — דוח מטלות immediate פתוחות
+  📋 מטלות לפי אחראי — דוח מטלות מקובץ לפי אחראי (category1)
+
+env (משותף): RAN_BOT_TOKEN, RAN_TOKEN, ANTHROPIC_API_KEY
+הרצה: python ran_bot.py
+"""
+import os, json, asyncio, requests
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    ConversationHandler, MessageHandler, filters, ContextTypes,
+)
+
+SHARED_ENV = r"C:/Users/User/Aiprojects/env/.env"
+
+
+def env_val(key, path=SHARED_ENV):
+    try:
+        for line in open(path, encoding="utf-8"):
+            if line.startswith(key + "="):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+BOT_TOKEN = env_val("RAN_BOT_TOKEN")
+API_TOKEN = env_val("RAN_TOKEN")
+ANTHROPIC_KEY = env_val("ANTHROPIC_API_KEY")
+GMAIL_USER = env_val("BOAZ_GMAIL_USER")
+GMAIL_PASS = env_val("BOAZ_GMAIL_APP_PASSWORD")
+API = "https://task.newavera.co.il/api/tasks/"
+AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
+OPEN = {"חדש", "בטיפול"}
+URG_ICON = {"דחוף": "🔴", "גבוה": "🟠", "בינוני": "🟡", "נמוך": "🟢"}
+URG_MAP = {"1": "דחוף", "2": "גבוה", "3": "בינוני", "4": "נמוך"}
+
+KB = ReplyKeyboardMarkup(
+    [["➕ מטלה חדשה", "⚡ מטלה מהירה"], ["⚡ מטלות מיידיות", "📋 מטלות לפי אחראי"]],
+    resize_keyboard=True,
+)
+URG_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔴 דחוף", callback_data="urg_1"), InlineKeyboardButton("🟠 גבוה", callback_data="urg_2")],
+    [InlineKeyboardButton("🟡 בינוני", callback_data="urg_3"), InlineKeyboardButton("🟢 נמוך", callback_data="urg_4")],
+])
+
+SUBJECT, SUB, DESC, URG, CAT1, CAT2 = range(6)
+QUICK = 10
+
+
+# ─── API helpers ───
+def api_list():
+    try:
+        return requests.get(API, headers=AUTH, timeout=30).json()
+    except Exception:
+        return []
+
+
+def api_create(payload):
+    return requests.post(API, headers={**AUTH, "Content-Type": "application/json"},
+                         data=json.dumps(payload).encode("utf-8"), timeout=30)
+
+
+def analyze_quick(text):
+    """Use Claude to turn free text into a structured task. Falls back to raw text."""
+    if not ANTHROPIC_KEY:
+        return {"subject": text[:50], "description": text}
+    prompt = (
+        "נתח את הטקסט הבא למטלה אחת. החזר אך ורק JSON עם השדות: "
+        "subject (נושא קצר), sub_subject (תת-נושא או \"\"), description (תיאור), "
+        "urgency (אחד מ: דחוף/גבוה/בינוני/נמוך), immediate (true/false). "
+        f"הטקסט: {text}"
+    )
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 512,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30,
+        )
+        raw = r.json()["content"][0]["text"]
+        import re
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = json.loads(m.group(0))
+        return {k: data.get(k) for k in ("subject", "sub_subject", "description", "urgency", "immediate") if data.get(k) is not None}
+    except Exception:
+        return {"subject": text[:50], "description": text}
+
+
+# ─── /start ───
+async def start(update, ctx):
+    await update.message.reply_text(
+        "👋 *שלום בועז, אני רן.*\nבחר פעולה מהתפריט:", parse_mode="Markdown", reply_markup=KB)
+
+
+# ─── reports ───
+async def immediate_report(update, ctx):
+    tasks = [t for t in api_list() if t.get("immediate") and t.get("status") in OPEN]
+    if not tasks:
+        await update.message.reply_text("⚡ אין מטלות מיידיות פתוחות.", reply_markup=KB); return
+    lines = [f"⚡ *מטלות מיידיות* ({len(tasks)})", ""]
+    for t in sorted(tasks, key=lambda x: x.get("urgency", "")):
+        lines.append(f"{URG_ICON.get(t.get('urgency'),'⚪')} *{t.get('subject')}*"
+                     f"{' · ' + t['sub_subject'] if t.get('sub_subject') else ''}"
+                     f"{' · אחראי: ' + t['category1'] if t.get('category1') else ''}  #{t.get('id')}")
+    await update.message.reply_text("\n".join(lines)[:4000], parse_mode="Markdown", reply_markup=KB)
+
+
+async def by_responsible_report(update, ctx):
+    tasks = [t for t in api_list() if t.get("status") in OPEN]
+    if not tasks:
+        await update.message.reply_text("📋 אין מטלות פתוחות.", reply_markup=KB); return
+    groups = {}
+    for t in tasks:
+        groups.setdefault(t.get("category1") or "ללא אחראי", []).append(t)
+    lines = [f"📋 *מטלות לפי אחראי* ({len(tasks)})", ""]
+    for resp, items in groups.items():
+        lines.append(f"👤 *{resp}* ({len(items)})")
+        for t in items:
+            lines.append(f"  {URG_ICON.get(t.get('urgency'),'⚪')} {t.get('subject')} · {t.get('status')}  #{t.get('id')}")
+        lines.append("")
+    await update.message.reply_text("\n".join(lines)[:4000], parse_mode="Markdown", reply_markup=KB)
+
+
+# ─── new task (step by step) ───
+async def new_start(update, ctx):
+    ctx.user_data["nt"] = {}
+    await update.message.reply_text("➕ *מטלה חדשה*\n\nמה הנושא?", parse_mode="Markdown")
+    return SUBJECT
+
+
+async def nt_subject(update, ctx):
+    ctx.user_data["nt"]["subject"] = update.message.text
+    await update.message.reply_text("תת-נושא? (או /skip)")
+    return SUB
+
+
+async def nt_sub(update, ctx):
+    ctx.user_data["nt"]["sub_subject"] = update.message.text
+    await update.message.reply_text("תיאור? (או /skip)")
+    return DESC
+
+
+async def nt_desc(update, ctx):
+    ctx.user_data["nt"]["description"] = update.message.text
+    await update.message.reply_text("בחר דחיפות:", reply_markup=URG_KB)
+    return URG
+
+
+async def nt_urg(update, ctx):
+    q = update.callback_query
+    await q.answer()
+    ctx.user_data["nt"]["urgency"] = URG_MAP[q.data.split("_")[1]]
+    await q.edit_message_text(f"דחיפות: {ctx.user_data['nt']['urgency']}")
+    await q.message.reply_text("מי האחראי? (או /skip)")
+    return CAT1
+
+
+async def nt_cat1(update, ctx):
+    ctx.user_data["nt"]["category1"] = update.message.text
+    await update.message.reply_text("קטגוריה נוספת? (או /skip)")
+    return CAT2
+
+
+async def nt_cat2(update, ctx):
+    ctx.user_data["nt"]["category2"] = update.message.text
+    return await nt_save(update, ctx)
+
+
+async def nt_skip(update, ctx):
+    nt = ctx.user_data["nt"]
+    if "sub_subject" not in nt:
+        nt["sub_subject"] = ""
+        await update.message.reply_text("תיאור? (או /skip)"); return DESC
+    if "description" not in nt:
+        nt["description"] = ""
+        await update.message.reply_text("בחר דחיפות:", reply_markup=URG_KB); return URG
+    if "category1" not in nt:
+        nt["category1"] = ""
+        await update.message.reply_text("קטגוריה נוספת? (או /skip)"); return CAT2
+    nt["category2"] = ""
+    return await nt_save(update, ctx)
+
+
+async def nt_save(update, ctx):
+    nt = ctx.user_data.pop("nt", {})
+    r = api_create(nt)
+    if r.status_code == 201:
+        t = r.json()
+        await update.message.reply_text(f"✅ נוצרה מטלה #{t['id']}: *{t['subject']}*", parse_mode="Markdown", reply_markup=KB)
+    else:
+        await update.message.reply_text(f"❌ שגיאה ({r.status_code})", reply_markup=KB)
+    return ConversationHandler.END
+
+
+# ─── quick task (Ran analyzes) ───
+async def quick_start(update, ctx):
+    await update.message.reply_text("⚡ *מטלה מהירה*\n\nכתוב מה צריך, ואני אנתח ואסדר:", parse_mode="Markdown")
+    return QUICK
+
+
+async def quick_save(update, ctx):
+    await update.message.reply_text("🧠 מנתח...")
+    payload = analyze_quick(update.message.text)
+    r = api_create(payload)
+    if r.status_code == 201:
+        t = r.json()
+        await update.message.reply_text(
+            f"✅ נוצרה מטלה #{t['id']}\n📌 *{t['subject']}*"
+            f"{chr(10) + '├ ' + t['sub_subject'] if t.get('sub_subject') else ''}"
+            f"\n├ דחיפות: {t.get('urgency')}\n└ {t.get('description','')[:120]}",
+            parse_mode="Markdown", reply_markup=KB)
+    else:
+        await update.message.reply_text(f"❌ שגיאה ({r.status_code})", reply_markup=KB)
+    return ConversationHandler.END
+
+
+async def cancel(update, ctx):
+    ctx.user_data.clear()
+    await update.message.reply_text("❌ בוטל.", reply_markup=KB)
+    return ConversationHandler.END
+
+
+# ─── conversational agent (free text → Ran understands, replies, and can act) ───
+SYSTEM = (
+    "אתה רן, העוזר האישי של בועז. אתה מנהל את המטלות שלו במערכת BoazTask. "
+    "כשבועז כותב לך בחופשי — הבן, ענה קצר ובעברית, ובמידת הצורך השתמש בכלים כדי להציג/ליצור/לעדכן מטלות או לקרוא את המייל שלו. "
+    "ערכים חוקיים: urgency ∈ {דחוף, גבוה, בינוני, נמוך}; status ∈ {חדש, בטיפול, הושלם, בוטל}. "
+    "לפני יצירה/עדכון משמעותיים — ודא שהבנת נכון, אבל אל תהיה מסורבל. אתה ידידותי ותכליתי."
+)
+TOOLS = [
+    {"name": "read_email", "description": "קרא מיילים אחרונים מתיבת הדואר של בועז (boazen@gmail.com). unread_only=true למיילים שלא נקראו; limit = כמה (ברירת מחדל 10).",
+     "input_schema": {"type": "object", "properties": {
+         "limit": {"type": "integer"}, "unread_only": {"type": "boolean"}}}},
+    {"name": "list_tasks", "description": "החזר את כל המטלות הקיימות (לסינון/סיכום/חיפוש).",
+     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "create_task", "description": "צור מטלה חדשה.",
+     "input_schema": {"type": "object", "properties": {
+         "subject": {"type": "string"}, "sub_subject": {"type": "string"},
+         "description": {"type": "string"},
+         "urgency": {"type": "string", "enum": ["דחוף", "גבוה", "בינוני", "נמוך"]},
+         "category1": {"type": "string"}, "category2": {"type": "string"},
+         "immediate": {"type": "boolean"}}, "required": ["subject"]}},
+    {"name": "update_task", "description": "עדכן מטלה קיימת לפי id (רק שדות לשינוי).",
+     "input_schema": {"type": "object", "properties": {
+         "task_id": {"type": "integer"}, "subject": {"type": "string"},
+         "sub_subject": {"type": "string"}, "description": {"type": "string"},
+         "urgency": {"type": "string", "enum": ["דחוף", "גבוה", "בינוני", "נמוך"]},
+         "status": {"type": "string", "enum": ["חדש", "בטיפול", "הושלם", "בוטל"]},
+         "category1": {"type": "string"}, "category2": {"type": "string"},
+         "immediate": {"type": "boolean"}}, "required": ["task_id"]}},
+]
+
+
+def _dh(s):
+    """Decode a MIME-encoded email header (handles Hebrew)."""
+    from email.header import decode_header
+    if not s:
+        return ""
+    out = ""
+    for txt, enc in decode_header(s):
+        out += txt.decode(enc or "utf-8", "ignore") if isinstance(txt, bytes) else txt
+    return out
+
+
+def fetch_emails(limit=10, unread_only=False):
+    """Read recent inbox emails for Boaz via IMAP (app password). Read-only (BODY.PEEK)."""
+    if not GMAIL_USER or not GMAIL_PASS:
+        return {"error": "חסר BOAZ_GMAIL_USER / BOAZ_GMAIL_APP_PASSWORD ב-env"}
+    import imaplib, email
+    try:
+        M = imaplib.IMAP4_SSL("imap.gmail.com")
+        M.login(GMAIL_USER, GMAIL_PASS)
+        M.select("INBOX")
+        _, data = M.search(None, "UNSEEN" if unread_only else "ALL")
+        ids = data[0].split()[-max(1, min(limit, 25)):][::-1]
+        out = []
+        for i in ids:
+            _, md = M.fetch(i, "(BODY.PEEK[])")
+            msg = email.message_from_bytes(md[0][1])
+            snippet = ""
+            try:
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            snippet = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore"); break
+                else:
+                    snippet = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", "ignore")
+            except Exception:
+                snippet = ""
+            out.append({"from": _dh(msg.get("From")), "subject": _dh(msg.get("Subject")),
+                        "date": msg.get("Date"), "snippet": " ".join(snippet.split())[:160]})
+        M.logout()
+        return out
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+
+
+def exec_tool(name, inp):
+    try:
+        if name == "read_email":
+            return fetch_emails(inp.get("limit", 10), bool(inp.get("unread_only", False)))
+        if name == "list_tasks":
+            return api_list()[:60]
+        if name == "create_task":
+            r = api_create(inp)
+            return r.json() if r.status_code == 201 else {"error": r.status_code, "body": r.text[:200]}
+        if name == "update_task":
+            tid = inp.pop("task_id")
+            r = requests.put(API + str(tid), headers={**AUTH, "Content-Type": "application/json"},
+                             data=json.dumps(inp, ensure_ascii=False).encode("utf-8"), timeout=30)
+            return r.json() if r.status_code == 200 else {"error": r.status_code, "body": r.text[:200]}
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+    return {"error": "unknown tool"}
+
+
+def run_ran_agent(history):
+    """Anthropic tool-use loop. history = list of {role, content(str)}. Returns reply text."""
+    if not ANTHROPIC_KEY:
+        return "מפתח ה-AI לא מוגדר — אני יכול לעבוד עם הכפתורים בינתיים."
+    messages = [dict(m) for m in history]
+    while messages and messages[0]["role"] != "user":
+        messages.pop(0)
+    for _ in range(6):
+        try:
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                json={"model": "claude-sonnet-4-6", "max_tokens": 1024, "system": SYSTEM,
+                      "tools": TOOLS, "messages": messages}, timeout=60,
+            ).json()
+        except Exception as e:  # noqa: BLE001
+            return f"שגיאה בחיבור ל-AI: {e}"
+        blocks = resp.get("content", [])
+        if not blocks:
+            return resp.get("error", {}).get("message", "לא קיבלתי תשובה.")
+        messages.append({"role": "assistant", "content": blocks})
+        tool_uses = [b for b in blocks if b.get("type") == "tool_use"]
+        if not tool_uses:
+            return "".join(b.get("text", "") for b in blocks if b.get("type") == "text") or "✓"
+        results = [{"type": "tool_result", "tool_use_id": tu["id"],
+                    "content": json.dumps(exec_tool(tu["name"], dict(tu.get("input", {}))), ensure_ascii=False)[:3500]}
+                   for tu in tool_uses]
+        messages.append({"role": "user", "content": results})
+    return "סיימתי כמה צעדים אבל לא הגעתי לתשובה סופית — נסה לנסח שוב."
+
+
+# ─── router: report buttons → reports; any other free text → conversational agent ───
+async def router(update, ctx):
+    text = update.message.text
+    if text == "⚡ מטלות מיידיות":
+        await immediate_report(update, ctx); return
+    if text == "📋 מטלות לפי אחראי":
+        await by_responsible_report(update, ctx); return
+    # free-text conversation with Ran
+    hist = ctx.user_data.setdefault("chat", [])
+    hist.append({"role": "user", "content": text})
+    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    reply = await asyncio.to_thread(run_ran_agent, hist)
+    hist.append({"role": "assistant", "content": reply})
+    del hist[:-12]  # keep last ~6 turns
+    await update.message.reply_text(reply, reply_markup=KB)
+
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    new_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ מטלה חדשה$"), new_start)],
+        states={
+            SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, nt_subject)],
+            SUB: [CommandHandler("skip", nt_skip), MessageHandler(filters.TEXT & ~filters.COMMAND, nt_sub)],
+            DESC: [CommandHandler("skip", nt_skip), MessageHandler(filters.TEXT & ~filters.COMMAND, nt_desc)],
+            URG: [CallbackQueryHandler(nt_urg, pattern="^urg_")],
+            CAT1: [CommandHandler("skip", nt_skip), MessageHandler(filters.TEXT & ~filters.COMMAND, nt_cat1)],
+            CAT2: [CommandHandler("skip", nt_skip), MessageHandler(filters.TEXT & ~filters.COMMAND, nt_cat2)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    quick_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^⚡ מטלה מהירה$"), quick_start)],
+        states={QUICK: [MessageHandler(filters.TEXT & ~filters.COMMAND, quick_save)]},
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    app.add_handler(new_conv)
+    app.add_handler(quick_conv)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, router))
+
+    print("Ran bot is running...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    main()

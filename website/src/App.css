@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+/* ===== Design System — TACT brand (warm-cream + steel-blue) ===== */
+:root {
+  --color-primary: #1F3A5F;
+  --color-primary-light: #2A4F7A;
+  --color-primary-soft: rgba(31, 58, 95, 0.07);
+  --color-accent: #D64A2E;
+  --color-ink: #1C1B19;
+  --color-bg: #FAF9F5;
+  --color-bg-white: #FFFEFB;
+  --color-text: #2A2A28;
+  --color-text-light: #706A60;
+  --color-text-white: #F4F1EA;
+  --color-border: #E7E2D6;
+
+  --font-family: 'Heebo', 'Assistant', 'Segoe UI', Tahoma, Arial, sans-serif;
+  --font-family-en: 'Space Grotesk', 'Heebo', sans-serif;
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-md: 0 4px 12px rgba(28, 27, 25, 0.06);
+  --shadow-lg: 0 8px 30px rgba(28, 27, 25, 0.13);
+
+  --max-width: 1200px;
+  --header-height: 72px;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { direction: rtl; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { text-decoration: none; color: inherit; }
+ul { list-style: none; }
+
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 24px;
+}

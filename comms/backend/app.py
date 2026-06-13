@@ -1,0 +1,187 @@
+"""Comms backend — the company's communication hub.
+
+A room hosts a conversation between the human (בועז) and one or more agents.
+MVP: 1:1 rooms (בועז ↔ רונית). The schema already supports N agents per room,
+so multi-agent meetings (with a chair agent) slot in later without migration.
+
+Run:  uvicorn app:app --port 5181 --reload   (from comms/backend)
+"""
+import threading
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+import db
+import agents
+
+app = FastAPI(title="Agent Company — Comms")
+
+SYSTEM = "מערכת"
+# רן מצורף אוטומטית לכל חדר (Front Door). הוא "מאזין": נוכח בכל חדר אך עונה רק
+# כשפונים אליו ב-@רן, או כשהוא הסוכן היחיד בחדר (1:1). ראה structure/Orchestration.md.
+AUTO_JOIN = ["רן"]
+LISTENERS = {"רן"}
+# per-room live state (single-process uvicorn): is a round running, and did
+# בועז raise his hand to interrupt it.
+ROUND_ACTIVE: dict[int, bool] = {}
+INTERRUPT: dict[int, bool] = {}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5180", "http://localhost:5173", "http://127.0.0.1:5180"],
+    allow_methods=["*"], allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+def _startup():
+    db.init_db()
+
+
+class NewRoom(BaseModel):
+    title: str
+    kind: str = "1:1"
+    participants: list[str] = []
+    chair: str | None = None
+
+
+class NewMessage(BaseModel):
+    text: str
+
+
+class NewParticipant(BaseModel):
+    agent: str
+
+
+@app.get("/agents")
+def get_agents():
+    return {"agents": agents.known_agents()}
+
+
+@app.get("/rooms")
+def get_rooms():
+    return db.list_rooms()
+
+
+@app.post("/rooms")
+def post_room(body: NewRoom):
+    unknown = [a for a in body.participants if a not in agents.known_agents()]
+    if unknown:
+        raise HTTPException(400, f"סוכנים לא מוכרים: {unknown}")
+    if body.chair and body.chair not in body.participants:
+        raise HTTPException(400, "היו״ר חייב להיות אחד המשתתפים")
+    # רן (וכל AUTO_JOIN) מצטרף אוטומטית לכל חדר — "מוכנס לחדר".
+    participants = list(body.participants)
+    for a in AUTO_JOIN:
+        if a not in participants:
+            participants.append(a)
+    # ה'גודל' של החדר נקבע לפי המשתתפים שאינם מאזינים (רן לא הופך 1:1 ל'ישיבה').
+    speakers = [a for a in participants if a not in LISTENERS]
+    kind = body.kind or ("meeting" if len(speakers) > 1 else "1:1")
+    rid = db.create_room(body.title, kind, participants, body.chair)
+    return {"id": rid}
+
+
+@app.delete("/rooms/{room_id}")
+def delete_room(room_id: int):
+    db.delete_room(room_id)
+    ROUND_ACTIVE.pop(room_id, None)
+    INTERRUPT.pop(room_id, None)
+    return {"ok": True}
+
+
+@app.get("/rooms/{room_id}/messages")
+def get_messages(room_id: int):
+    return db.list_messages(room_id)
+
+
+@app.post("/rooms/{room_id}/participants")
+def post_participant(room_id: int, body: NewParticipant):
+    if body.agent not in agents.known_agents():
+        raise HTTPException(400, f"סוכן לא מוכר: {body.agent}")
+    db.add_participant(room_id, body.agent)
+    return {"ok": True}
+
+
+def _reply_in_room(room_id, agent):
+    history = db.list_messages(room_id)  # everything so far, incl. this round
+    try:
+        reply = agents.agent_reply(agent, history, room_id=room_id)
+    except Exception as e:  # noqa: BLE001
+        reply = f"(שגיאה במוח של {agent}: {e})"
+    if reply:
+        db.add_message(room_id, agent, reply)
+
+
+def _run_round(room_id, responders, summarizer):
+    """Background round. Checks the interrupt flag before each turn so בועז's
+    raised hand stops the floor immediately (the in-flight turn still finishes)."""
+    try:
+        for agent in responders:
+            if INTERRUPT.get(room_id):
+                return
+            _reply_in_room(room_id, agent)
+        if summarizer and not INTERRUPT.get(room_id):
+            _reply_in_room(room_id, summarizer)
+    finally:
+        INTERRUPT[room_id] = False
+        ROUND_ACTIVE[room_id] = False
+
+
+@app.post("/rooms/{room_id}/messages")
+def post_message(room_id: int, body: NewMessage):
+    """Store the human message and kick off the reply round in the background
+    (so בועז can interrupt mid-round). Addressing:
+      • @mention → only the mentioned agents reply (targeted).
+      • room has a chair → every other participant speaks once, chair sums up.
+      • else (1:1 / no chair) → each participant replies once.
+    The client polls /messages + /state to stream replies as they land."""
+    parts = db.room_participants(room_id)
+    if not parts:
+        raise HTTPException(404, "חדר לא קיים או ללא משתתפים")
+    text = body.text.strip()
+    chair = db.room_chair(room_id)
+
+    user_msg = db.add_message(room_id, agents.HUMAN, text)
+
+    mentioned = [a for a in parts if f"@{a}" in text]
+    if mentioned:
+        responders, summarizer = mentioned, None
+    elif chair and chair in parts and len(parts) > 1:
+        responders = [a for a in parts if a != chair]
+        summarizer = chair
+    else:
+        responders, summarizer = parts, None
+
+    # מאזינים (רן) שותקים בסבב הרגיל אם יש מי שיענה — אלא אם פנו אליהם ב-@.
+    if not mentioned:
+        speakers = [a for a in responders if a not in LISTENERS]
+        if speakers:
+            responders = speakers
+
+    INTERRUPT[room_id] = False
+    ROUND_ACTIVE[room_id] = True
+    threading.Thread(target=_run_round, args=(room_id, responders, summarizer),
+                     daemon=True).start()
+
+    return {"messages": [user_msg], "round_active": True}
+
+
+@app.get("/rooms/{room_id}/state")
+def get_state(room_id: int):
+    return {"round_active": bool(ROUND_ACTIVE.get(room_id))}
+
+
+@app.post("/rooms/{room_id}/interrupt")
+def interrupt(room_id: int):
+    """בועז raises his hand: stop the round and let everyone know he has the floor."""
+    INTERRUPT[room_id] = True
+    msg = db.add_message(room_id, SYSTEM,
+                         "✋ בועז ביקש את רשות הדיבור — עוצרים את הסבב, הרצפה שלך.")
+    return {"ok": True, "message": msg}
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "agents": agents.known_agents()}
