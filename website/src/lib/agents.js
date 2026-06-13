@@ -3,7 +3,7 @@
    the comms backend's /agents.roles (when present) takes precedence at runtime. */
 
 export const AGENT_ORDER = [
-  'רונית', 'רן', 'מנכ״ל', 'סמנכ״ל כספים', 'סמנכ״ל תפעול', 'עומרי', 'גיא',
+  'רונית', 'רן', 'מנכ״ל', 'סמנכ״ל כספים', 'סמנכ״ל תפעול', 'עומרי', 'גיא', 'זובין',
 ]
 
 export const AGENT_ROLES = {
@@ -14,4 +14,5 @@ export const AGENT_ROLES = {
   'סמנכ״ל תפעול': 'COO',
   'עומרי': 'ניטור מתקני חניה',
   'גיא': 'שירות לקוחות חניה',
+  'זובין': 'מנצח — תזמון',
 }
