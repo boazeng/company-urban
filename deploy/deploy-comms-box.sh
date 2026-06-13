@@ -23,11 +23,16 @@ scp -i "$KEY" -o StrictHostKeyChecking=no \
   "$REPO"/comms/backend/*.py \
   "ubuntu@$BOX_IP:$DEST/comms/backend/"
 
-echo "→ syncing schedule/Schedule.md (זובין reads it for conversation)"
+echo "→ seeding schedule/Schedule.md only if absent (זובין edits it live on the box)"
 "${SSH[@]}" "mkdir -p $DEST/schedule"
-scp -i "$KEY" -o StrictHostKeyChecking=no \
-  "$REPO/schedule/Schedule.md" \
-  "ubuntu@$BOX_IP:$DEST/schedule/Schedule.md"
+if "${SSH[@]}" "test -f $DEST/schedule/Schedule.md"; then
+  echo "   Schedule.md already on the box — leaving זובין's live copy untouched"
+  echo "   (to capture his edits into the repo/website: bash deploy/pull-schedule-from-box.sh)"
+else
+  scp -i "$KEY" -o StrictHostKeyChecking=no \
+    "$REPO/schedule/Schedule.md" \
+    "ubuntu@$BOX_IP:$DEST/schedule/Schedule.md"
+fi
 
 echo "→ clearing stale bytecode + restarting the comms service"
 "${SSH[@]}" "rm -rf $DEST/comms/backend/__pycache__; sudo systemctl restart comms; sleep 2; systemctl is-active comms"
