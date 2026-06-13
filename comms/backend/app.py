@@ -56,7 +56,7 @@ class NewParticipant(BaseModel):
 
 @app.get("/agents")
 def get_agents():
-    return {"agents": agents.known_agents()}
+    return {"agents": agents.known_agents(), "roles": agents.roles()}
 
 
 @app.get("/rooms")

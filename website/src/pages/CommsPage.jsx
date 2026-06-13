@@ -7,6 +7,7 @@ const API = import.meta.env.DEV ? 'http://localhost:5181' : 'https://comms.newav
 export default function CommsPage() {
   const [rooms, setRooms] = useState([])
   const [agents, setAgents] = useState([])
+  const [roles, setRoles] = useState({})
   const [activeId, setActiveId] = useState(null)
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
@@ -28,6 +29,7 @@ export default function CommsPage() {
       try {
         const ag = await fetch(`${API}/agents`).then((x) => x.json())
         setAgents(ag.agents || [])
+        setRoles(ag.roles || {})
         let r = await loadRooms()
         if (!r.length) {
           const created = await fetch(`${API}/rooms`, {
@@ -173,6 +175,7 @@ uvicorn app:app --port 5181 --reload</pre>
           {creating && (
             <NewRoomForm
               agents={agents}
+              roles={roles}
               onCancel={() => setCreating(false)}
               onCreate={async (payload) => {
                 const created = await fetch(`${API}/rooms`, {
@@ -303,7 +306,7 @@ uvicorn app:app --port 5181 --reload</pre>
   )
 }
 
-function NewRoomForm({ agents, onCreate, onCancel }) {
+function NewRoomForm({ agents, roles = {}, onCreate, onCancel }) {
   const [title, setTitle] = useState('')
   const [picked, setPicked] = useState([])
   const [chair, setChair] = useState('')
@@ -328,7 +331,8 @@ function NewRoomForm({ agents, onCreate, onCancel }) {
         {agents.map((a) => (
           <label key={a} className={`comms-agent ${picked.includes(a) ? 'on' : ''}`}>
             <input type="checkbox" checked={picked.includes(a)} onChange={() => toggle(a)} />
-            {a}
+            <span className="comms-agent-name">{a}</span>
+            {roles[a] && <span className="comms-agent-role">{roles[a]}</span>}
           </label>
         ))}
       </div>

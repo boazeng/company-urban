@@ -25,6 +25,24 @@ BESPOKE = {
 
 HUMAN = "בועז"  # the human owner; messages from this author map to role 'user'
 
+# Short role label per agent, shown next to the name in the UI (room picker).
+# For execs whose name is already the title (מנכ״ל/סמנכ״ל...), we show the English
+# acronym to add signal without repeating the name.
+ROLES = {
+    "רונית": "סמנכ״לית שיווק",
+    "רן": "עוזר אישי ומרכזן",
+    "מנכ״ל": "CEO",
+    "סמנכ״ל כספים": "CFO",
+    "סמנכ״ל תפעול": "COO",
+    "עומרי": "ניטור מתקני חניה",
+    "גיא": "שירות לקוחות חניה",
+}
+
+
+def roles():
+    """Map of agent name -> short role label, for the agents currently known."""
+    return {a: ROLES.get(a, "") for a in known_agents()}
+
 
 def _load(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
