@@ -29,6 +29,10 @@ Parameters:
   RoutingScriptId:
     Type: String
     Default: "guy-parking-service"
+  CertificateArn:
+    Type: String
+    Description: ACM cert (us-east-1) for the custom domain
+    Default: "arn:aws:acm:us-east-1:824980746386:certificate/527db2ac-6df1-4287-8bc1-3618b9ca8e59"
 
 Resources:
 
@@ -243,8 +247,12 @@ Resources:
       DistributionConfig:
         Enabled: true
         DefaultRootObject: index.html
-        # When the Cloudflare domain is ready, add it here under Aliases +
-        # ViewerCertificate (ACM cert in us-east-1) — or front it via Cloudflare.
+        Aliases:
+          - company-urban.newavera.co.il
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
         Origins:
           - Id: S3Origin
             DomainName: !GetAtt FrontendBucket.RegionalDomainName
