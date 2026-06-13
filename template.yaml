@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Agent Company (company-urban) — dashboard + agent services
+
+# Phase A: the dashboard (static Vite/React) on S3 + CloudFront.
+# comms backend (FastAPI on Lambda) and Guy's WhatsApp webhook are added in
+# later phases as AWS::Serverless::Function resources + an ApiOrigin behavior.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+
+Resources:
+
+  # ── S3 Bucket for the dashboard ─────────────────────
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub company-urban-frontend-${Stage}
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub arn:aws:s3:::company-urban-frontend-${Stage}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  # ── CloudFront (CDN + TLS) ──────────────────────────
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub company-urban-oac-${Stage}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        # When the Cloudflare domain is ready, add it here under Aliases +
+        # ViewerCertificate (ACM cert in us-east-1) — or front it via Cloudflare.
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          # Managed-CachingOptimized policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CustomErrorResponses:
+          # SPA routing — serve index.html for client-side routes
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+Outputs:
+  CloudFrontUrl:
+    Description: Dashboard URL (CloudFront)
+    Value: !Sub https://${CloudFrontDistribution.DomainName}
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID (for cache invalidation)
+    Value: !Ref CloudFrontDistribution
+  FrontendBucketName:
+    Description: S3 bucket holding the built dashboard
+    Value: !Ref FrontendBucket

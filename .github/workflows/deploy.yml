@@ -1,0 +1,80 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # for AWS OIDC federation (no long-lived keys)
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: company-urban-stack
+  STAGE: prod
+
+jobs:
+  deploy:
+    name: Deploy dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      # ── Deploy infra (S3 + CloudFront) ──────────────────
+      - name: SAM deploy
+        run: |
+          sam deploy \
+            --template-file template.yaml \
+            --stack-name ${{ env.STACK_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --s3-bucket aws-sam-cli-managed-default-samclisourcebucket-ebw2dr9e8ezp \
+            --parameter-overrides Stage=${{ env.STAGE }}
+
+      # ── Build the dashboard (Vite bakes in the vault markdown) ──
+      - name: Build dashboard
+        run: |
+          cd website
+          npm ci
+          npm run build
+
+      # ── Upload to S3 ────────────────────────────────────
+      - name: Deploy dashboard to S3
+        run: |
+          aws s3 sync website/dist/ s3://company-urban-frontend-${{ env.STAGE }}/ \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+
+          aws s3 cp website/dist/index.html \
+            s3://company-urban-frontend-${{ env.STAGE }}/index.html \
+            --cache-control "public, max-age=0, must-revalidate"
+
+      # ── Invalidate CloudFront cache ─────────────────────
+      - name: Invalidate CloudFront
+        run: |
+          CF_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text)
+          aws cloudfront create-invalidation \
+            --distribution-id "$CF_ID" \
+            --paths "/*"
