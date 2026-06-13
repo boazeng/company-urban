@@ -3,7 +3,7 @@
 **מיקום בהיררכיה:** רמה 2 · תחת **סמנכ״ל תפעול** (COO) · [[Structure]]
 **סטטוס:** 🟡 בפיתוח — תסריט שכפול מדויק של "דיווח תקלה" רץ בטלגרם (long polling, נבדק `getMe` ✅). ממתין לבדיקת שיחה מקצה-לקצה מהטלפון.
 **סוג:** בוט שיחה (לא פקודת `claude -p` כמו שאר הסוכנים) — בנוי על פלטפורמת **takt-bots**.
-**מערכת:** `C:\Users\User\Aiprojects\takt-bots`
+**מערכת:** מוזג ל-monorepo תחת [`guy/`](../../../guy/) (מקור היסטורי: `C:\Users\User\Aiprojects\takt-bots`).
 **בוט:** [[GUY_BOT_TELEGRAM]]
 
 ## הייעוד
@@ -12,7 +12,7 @@
 
 ## התסריט (script)
 - **מזהה:** `guy-parking-service` · **שם:** "גיא — שירות מתקני חניה"
-- שכפול מדויק של תסריט "דיווח תקלה" (`maintenance-troubleshoot`, 14 שלבים) — נטען מה-DB החי דרך [seed_guy.py](../../../../takt-bots/seed_guy.py). ההבדל היחיד מהמקור: `script_id` ושם התצוגה.
+- שכפול מדויק של תסריט "דיווח תקלה" (`maintenance-troubleshoot`, 14 שלבים) — נטען מה-DB החי דרך [seed_guy.py](../../../guy/seed_guy.py). ההבדל היחיד מהמקור: `script_id` ושם התצוגה.
 - נערך ויזואלית בעורך הזרימה של takt-bots (`http://localhost:5210`).
 - הברכה כרגע עדיין "הבוט החכם של חברת האחזקה" (כמו המקור) — לשנות ל"גיא" כשנחדד.
 
@@ -28,9 +28,9 @@
   בטלגרם: `/start` (או "התחל") מאתחל שיחה.
 
 ## קבצים (ב-takt-bots)
-- [tools/telegram/telegram_bot.py](../../../../takt-bots/tools/telegram/telegram_bot.py) — עטיפת Telegram Bot API (טקסט, כפתורי inline, polling, נירמול הודעות). מקביל ל-`whatsapp_bot.py`.
-- [run_telegram_guy.py](../../../../takt-bots/run_telegram_guy.py) — מריץ את גיא בטלגרם דרך אותו מנוע (M1000 → M10010).
-- [seed_guy.py](../../../../takt-bots/seed_guy.py) — טוען/מסנכרן את התסריט מ-`maintenance-troubleshoot`.
+- [tools/telegram/telegram_bot.py](../../../guy/tools/telegram/telegram_bot.py) — עטיפת Telegram Bot API (טקסט, כפתורי inline, polling, נירמול הודעות). מקביל ל-`whatsapp_bot.py`.
+- [run_telegram_guy.py](../../../guy/run_telegram_guy.py) — מריץ את גיא בטלגרם דרך אותו מנוע (M1000 → M10010).
+- [seed_guy.py](../../../guy/seed_guy.py) — טוען/מסנכרן את התסריט מ-`maintenance-troubleshoot`.
 
 ## הצעד הבא
 - [ ] בדיקת שיחה מקצה-לקצה מהטלפון (`/start` → דיווח תקלה → פתיחת קריאה).

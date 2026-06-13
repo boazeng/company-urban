@@ -30,6 +30,11 @@ env/
 # Agent runtime output (generated)
 output/
 
+# Databases (runtime state — re-seeded on deploy via seed scripts)
+*.db
+*.sqlite
+*.sqlite3
+
 # Editor / OS
 .vscode/
 .idea/
