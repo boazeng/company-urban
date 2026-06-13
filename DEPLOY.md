@@ -36,25 +36,22 @@ in `template.yaml`, and use a **DNS-only** (grey-cloud) CNAME instead.
 The dashboard is self-contained: Vite inlines the vault markdown (`?raw`) at
 build time, so no live file reads are needed in production.
 
-## One-time prerequisites (AWS / GitHub)
+## One-time prerequisite (GitHub)
 
-The `urbangroup` repo already deploys to this AWS account via an OIDC role, so
-reuse it — two small edits:
+A **dedicated** OIDC deploy role `company-urban-deploy` already exists in the AWS
+account — separate from urbangroup, with S3/IAM/Lambda/DynamoDB permissions
+scoped to `company-urban-*` so CI cannot touch any other system. Its trust is
+locked to `repo:boazeng/company-urban:*`.
 
-1. **GitHub secret** on this repo (`boazeng/company-urban`):
-   - `AWS_DEPLOY_ROLE_ARN` = the same role ARN used by urbangroup.
+Only one step remains — add the GitHub secret on this repo
+(`boazeng/company-urban` → Settings → Secrets and variables → Actions):
 
-2. **Extend the IAM role trust policy** to allow this repo. Add the
-   `company-urban` repo to the OIDC `sub` condition alongside urbangroup, e.g.:
-   ```json
-   "token.actions.githubusercontent.com:sub": [
-     "repo:boazeng/urbangroup:*",
-     "repo:boazeng/company-urban:*"
-   ]
-   ```
+- `AWS_DEPLOY_ROLE_ARN` = `arn:aws:iam::824980746386:role/company-urban-deploy`
 
-That's it — the role's existing permissions (CloudFormation, S3, CloudFront)
-already cover this stack. The SAM-managed deploy bucket is shared per-account.
+After that, every push to `main` deploys automatically.
+
+> The first deploy was run locally with the account owner's credentials, so the
+> site is already live; the secret only enables hands-off auto-deploy.
 
 ## Deploy
 
