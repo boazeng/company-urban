@@ -3,7 +3,7 @@ import structureRaw from '../../../structure/Structure.md?raw'
 import { parseMarkdownTable, colIndex } from '../lib/mdTable'
 import './StructurePage.css'
 
-function NodeCard({ node, root, staff }) {
+function NodeCard({ node, root, staff, showPurpose }) {
   /* personal assistant — compact card: just the name + a small tag */
   if (staff) {
     return (
@@ -31,7 +31,7 @@ function NodeCard({ node, root, staff }) {
           {node.en && <span className="node-en">{node.en}</span>}
         </>
       )}
-      {node.purpose && <span className="node-purpose">{node.purpose}</span>}
+      {showPurpose && node.purpose && <span className="node-purpose">{node.purpose}</span>}
       {node.link && (
         <a className="node-link" href={node.link} target="_blank" rel="noopener noreferrer">
           🔧 עורך התסריט
@@ -45,7 +45,7 @@ function NodeCard({ node, root, staff }) {
    their parent — not in the subordinate row — to mark they aren't VPs.
    Each node that has reports (except the root) gets a +/- control above its
    box, straddling the connector line, to expand/collapse that branch only. */
-function TreeNode({ node, childrenOf, root, collapsed, onToggle }) {
+function TreeNode({ node, childrenOf, root, collapsed, onToggle, showPurpose }) {
   const kids = childrenOf(node.name)
   const assistants = kids.filter((k) => k.type === 'עוזר')
   const reports = kids.filter((k) => k.type !== 'עוזר')
@@ -73,7 +73,7 @@ function TreeNode({ node, childrenOf, root, collapsed, onToggle }) {
             >+</button>
           </div>
         )}
-        <NodeCard node={node} root={root} />
+        <NodeCard node={node} root={root} showPurpose={showPurpose} />
         {assistants.length > 0 && (
           <div className="staff-side">
             {assistants.map((a) => (
@@ -97,6 +97,7 @@ function TreeNode({ node, childrenOf, root, collapsed, onToggle }) {
               childrenOf={childrenOf}
               collapsed={collapsed}
               onToggle={onToggle}
+              showPurpose={showPurpose}
             />
           ))}
         </ul>
@@ -144,6 +145,7 @@ export default function StructurePage() {
   )
 
   const [collapsed, setCollapsed] = useState(() => new Set())
+  const [showPurpose, setShowPurpose] = useState(false)  // agent descriptions hidden by default
   const onToggle = (name) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -172,6 +174,9 @@ export default function StructurePage() {
           <button className="tree-btn tree-btn-wide" onClick={expandAll}>
             פתח הכל
           </button>
+          <button className="tree-btn tree-btn-wide" onClick={() => setShowPurpose((v) => !v)}>
+            {showPurpose ? 'הסתר תיאורים' : 'הצג תיאורים'}
+          </button>
           <span className="tree-controls-hint">או ± מעל כל מחלקה</span>
         </div>
 
@@ -185,6 +190,7 @@ export default function StructurePage() {
                 root
                 collapsed={collapsed}
                 onToggle={onToggle}
+                showPurpose={showPurpose}
               />
             ))}
           </ul>
