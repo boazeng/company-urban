@@ -20,6 +20,7 @@ VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 BESPOKE = {
     "רונית": rf"{VAULT}/Agents/marketing - cmo/RONIT/ronit_core.py",
     "רן": rf"{VAULT}/Agents/מנכ״ל/רן/ran_core.py",  # העוזר האישי + מרכזן (Front Door)
+    "זובין": rf"{VAULT}/Agents/מנכ״ל/זובין/zubin_core.py",  # שיחה על הלוח + פעימת /conductor לפי בקשה
     # future bespoke cores: "סמנכ״ל כספים": ".../cfo_core.py", ...
 }
 

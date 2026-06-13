@@ -14,7 +14,7 @@ VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 COMMANDS = {
     "עומרי": "/omri",
     "גיא": "/guy",
-    "זובין": "/conductor",
+    # זובין עבר למוח bespoke (zubin_core) — שיחה על הלוח + פעימה לפי בקשה מפורשת.
 }
 
 
