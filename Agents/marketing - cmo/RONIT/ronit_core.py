@@ -17,8 +17,8 @@ import sys
 import json
 import requests
 
-SHARED_ENV = r"C:/Users/User/Aiprojects/env/.env"
-VAULT = r"C:/Users/User/Aiprojects/obsi_comp"
+SHARED_ENV = os.environ.get("SHARED_ENV", r"C:/Users/User/Aiprojects/env/.env")
+VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 

@@ -8,13 +8,14 @@ Two kinds of brain, both exposing chat(history) -> str:
 
 Adding an agent = one line (bespoke path or an exec profile).
 """
+import os
 import importlib.util
 import inspect
 
 import exec_brain
 import cmd_brain
 
-VAULT = r"C:/Users/User/Aiprojects/obsi_comp"
+VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 
 BESPOKE = {
     "רונית": rf"{VAULT}/Agents/marketing - cmo/RONIT/ronit_core.py",

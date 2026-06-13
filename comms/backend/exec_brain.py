@@ -6,10 +6,11 @@ This lets management meetings work (CEO chair + CFO + COO + CMO) without
 writing a separate file per agent. When an agent grows real tools/data, it
 graduates to its own <agent>_core.py and moves to the bespoke registry.
 """
+import os
 import json
 import requests
 
-SHARED_ENV = r"C:/Users/User/Aiprojects/env/.env"
+SHARED_ENV = os.environ.get("SHARED_ENV", r"C:/Users/User/Aiprojects/env/.env")
 
 
 def env_val(key, path=SHARED_ENV):

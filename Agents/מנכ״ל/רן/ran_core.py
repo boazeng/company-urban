@@ -30,8 +30,8 @@ try:
 except ImportError:  # רן עדיין עובד גם בלי שכבת המרכזן
     ran_orchestrator = None
 
-SHARED_ENV = r"C:/Users/User/Aiprojects/env/.env"
-VAULT = r"C:/Users/User/Aiprojects/obsi_comp"
+SHARED_ENV = os.environ.get("SHARED_ENV", r"C:/Users/User/Aiprojects/env/.env")
+VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 
 
 def env_val(key, path=SHARED_ENV):
