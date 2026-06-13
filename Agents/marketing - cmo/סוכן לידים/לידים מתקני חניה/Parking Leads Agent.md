@@ -1,31 +1,53 @@
-# 🅿️ סוכן לידים — מתקני חניה
+# 🅿️ ירון — סוכן לידים מתקני חניה
 
-**פקודה:** `/parking-leads`
+**שם הסוכן:** ירון
+**פקודה:** `/parking-leads <עיר[,עיר...]>`
 **מיקום בהיררכיה:** רמה 3 · תחת [[Conductor (Zubin)|סוכן לידים]] / סמנכ״ל שיווק ([[Structure]])
-**סטטוס:** ✅ פעיל — אומת end-to-end על גבעתיים (11/06/2026): 468 פרוטוקולים → 47 פרויקטים → טיוטת מייל
+**סטטוס:** ✅ פעיל — אומת end-to-end על גבעתיים (11/06/2026); הורחב ל-7 ערים complot.
 **הגדרה:** [[parking-leads]] (`.claude/commands/parking-leads.md`)
 
 ## מה הוא עושה
-פעם בשבוע סורק ועדות תכנון, מזהה פרויקטים שקיבלו אישור למתקני חניה (אוטומטי/חצי-אוטומטי/מכפילים), מכניס אותם ל-DB של פרויקט `newave land design`, ומכין טיוטת מייל ל-boazen@gmail.com עם הפרויקטים החדשים בלבד.
+ירון **מוצא לידים מהחלטות ועדה מקומית**: סורק פרוטוקולים של ועדות תכנון, מזהה פרויקטים שקיבלו אישור למתקני חניה (אוטומטי/חצי-אוטומטי/מכפילים), מכניס אותם ל-DB של פרויקט `newave land design`, ומכין טיוטת מייל ל-boazen@gmail.com עם הפרויקטים החדשים בלבד. רץ **בלילה (01:00), עיר/יום**.
 
-## איך זה עובד (v1 — גבעתיים)
-מנצל את הפייפליין הקיים ב-`newave land design`:
-1. **סריקה** — `complot_scraper.py --site-id 98 --city-name גבעתיים ... --output-dir data/protocols_search`
-2. **חילוץ + DB** — `extract_parking_new_cities.py givatayim` (Claude Haiku + geocode) → `data/parking_protocols_givatayim.json`
-3. **diff** — [[parking_leads_diff]] (`scripts/parking_leads_diff.py`) משווה ל-baseline ומוצא פרויקטים חדשים (מפתח: `{עיר, כתובת}`)
-4. **טיוטה** — Gmail draft עם טבלת הפרויקטים החדשים
+## תזמון שבועי ([[Schedule]] · זובין מפעיל ב-01:00)
+| יום | ערים | סטטוס |
+|-----|------|-------|
+| ראשון | גבעתיים, בני ברק | ✅ פעיל |
+| שני | בת ים | ✅ פעיל *(ראשל״צ ממתין ל-site-id)* |
+| שלישי | תל אביב, נתניה | 🔜 מתוכנן *(פלטפורמה/site-id חסר)* |
+| רביעי | חיפה, ירושלים | 🔜 מתוכנן *(pipeline נפרד)* |
+| חמישי | חולון, הרצליה | ✅ פעיל |
+| שישי | רמת גן, רמת השרון | ✅ פעיל |
+
+> **תלוי בכך שהמחשב דלוק וער ב-01:00** — זובין מופעל ע״י משימת Windows שעתית; אם המכונה ישנה בלילה הריצה לא תתבצע.
+
+## ערים נתמכות (complot — site-id מאומת)
+גבעתיים (98), בת ים (81), חולון (34), הרצליה (121), רמת גן (3), רמת השרון (118), בני ברק (75).
+טבלת האמת המלאה (site-id · protocols-only · מפתח מחלץ) נמצאת ב-[[parking-leads]].
+
+**טרם נתמכות:** תל אביב (אתר עצמאי), חיפה (SharePoint), ירושלים (מערכת עצמאית), ראשל״צ/נתניה (צריך לגלות site-id ב-complot).
+
+## איך זה עובד (לכל עיר)
+1. **baseline** — צילום ה-DB הנוכחי של העיר (`_baseline_{עיר}.json`).
+2. **סריקה** — `complot_scraper.py --site-id <id> --city-name <עיר> --output-dir data/protocols_search` (עם `--protocols-only` לכל עיר חוץ מגבעתיים).
+3. **חילוץ + DB** — `extract_parking_new_cities.py <מפתח>` (Claude Haiku + geocode).
+4. **diff** — [[parking_leads_diff]] משווה ל-baseline ומוצא חדשים (מפתח: `{עיר, כתובת}`).
+5. **טיוטה** — Gmail draft עם טבלת הפרויקטים החדשים.
 
 ## קלט / תלויות
-- פרויקט `newave land design` עם סביבת ה-Python שלו מותקנת (requirements + anthropic, geopandas וכו')
-- `ANTHROPIC_API_KEY` (ל-Claude Haiku בחילוץ) — ב-env המשותף
-- חיבור Gmail (כרגע טיוטה בלבד דרך claude.ai MCP)
+- פרויקט `newave land design` עם סביבת ה-Python שלו (anthropic, geopandas, PyMuPDF...).
+- `ANTHROPIC_API_KEY` (ל-Claude Haiku בחילוץ) — ב-env המשותף.
+- חיבור Gmail (כרגע טיוטה בלבד דרך claude.ai MCP).
 
 ## פלט
-- **DB:** `newave land design/data/parking_protocols_givatayim.json` (לאן שהפרויקט מכניס)
-- **דוח שבועי:** `output/parking-leads/{YYYY-MM-DD} גבעתיים.md`
-- **מייל:** טיוטה ל-boazen@gmail.com
+- **DB לכל עיר:** `newave land design/data/parking_protocols_{עיר}.json`
+- **דוח:** `output/parking-leads/{YYYY-MM-DD} {עיר}.md`
+- **מייל:** טיוטה ל-boazen@gmail.com (אחת לכל עיר)
 
 ## TODO
-- [ ] ריצת אימות end-to-end על גבעתיים, ואז להפוך סטטוס ל-`פעיל` בלוח הזמנים.
-- [ ] הרחבה לערים נוספות (בת ים, ראשל״צ, נתניה, חיפה, ירושלים) — סוכן-משנה/קונפיג לכל עיר.
+- [ ] **תל אביב** — חיבור ה-scraper העצמאי (`telaviv/telaviv_scraper.py`) ל-pipeline החילוץ.
+- [ ] **חיפה / ירושלים** — מסלול pipeline נפרד (SharePoint / מערכת עצמאית).
+- [ ] **ראשל״צ / נתניה** — הרצת `find_complot_ids.py` לגילוי site-id, ואם קיימות ב-complot — חיבור.
+- [ ] **פתח תקווה** — עיר מרכזית גדולה שחסרה; לגלות site-id ולהוסיף.
 - [ ] מעבר משליחת טיוטה לשליחה אמיתית (SMTP/Gmail API) בשרת.
+- [ ] להבטיח שזובין רץ ב-01:00 גם כשהמחשב ישן (wake-timer / מעבר לענן).
