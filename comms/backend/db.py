@@ -28,6 +28,7 @@ def init_db():
             title TEXT NOT NULL,
             kind TEXT NOT NULL DEFAULT '1:1',   -- '1:1' | 'meeting'
             chair TEXT,                          -- chair agent for meetings (NULL for 1:1)
+            status TEXT NOT NULL DEFAULT 'active', -- 'active' (open) | 'closed' (ended)
             created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS participants (
@@ -47,6 +48,11 @@ def init_db():
     # migration: add `chair` to pre-existing rooms tables
     try:
         conn.execute("ALTER TABLE rooms ADD COLUMN chair TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    # migration: add `status` (existing rooms default to 'active')
+    try:
+        conn.execute("ALTER TABLE rooms ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
     except sqlite3.OperationalError:
         pass  # column already exists
     conn.commit()
@@ -81,13 +87,24 @@ def delete_room(room_id):
 def list_rooms():
     conn = get_conn()
     rooms = []
-    for r in conn.execute("SELECT * FROM rooms ORDER BY id DESC").fetchall():
+    # active (open) conversations first, then closed ones; newest first within each group.
+    q = ("SELECT * FROM rooms "
+         "ORDER BY CASE COALESCE(status,'active') WHEN 'active' THEN 0 ELSE 1 END, id DESC")
+    for r in conn.execute(q).fetchall():
         parts = [p["agent"] for p in
                  conn.execute("SELECT agent FROM participants WHERE room_id=?", (r["id"],)).fetchall()]
         rooms.append({"id": r["id"], "title": r["title"], "kind": r["kind"],
-                      "chair": r["chair"], "created_at": r["created_at"], "participants": parts})
+                      "chair": r["chair"], "status": r["status"] if "status" in r.keys() else "active",
+                      "created_at": r["created_at"], "participants": parts})
     conn.close()
     return rooms
+
+
+def set_room_status(room_id, status):
+    conn = get_conn()
+    conn.execute("UPDATE rooms SET status=? WHERE id=?", (status, room_id))
+    conn.commit()
+    conn.close()
 
 
 def room_chair(room_id):

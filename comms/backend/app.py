@@ -55,6 +55,10 @@ class NewParticipant(BaseModel):
     agent: str
 
 
+class RoomStatus(BaseModel):
+    status: str  # 'active' (open) | 'closed' (ended)
+
+
 def _greeting(agent):
     """כלל 1 ב-comms/Room-Conduct.md — הצגה עצמית בכניסה לחדר (פעם אחת)."""
     role = agents.ROLES.get(agent, "")
@@ -98,6 +102,16 @@ def post_room(body: NewRoom):
     for a in participants:
         db.add_message(rid, a, _greeting(a))
     return {"id": rid}
+
+
+@app.post("/rooms/{room_id}/status")
+def post_room_status(room_id: int, body: RoomStatus):
+    """End a conversation (status='closed') or reopen it (status='active').
+    Separate from delete — a closed room keeps its history."""
+    if body.status not in ("active", "closed"):
+        raise HTTPException(400, "status חייב להיות 'active' או 'closed'")
+    db.set_room_status(room_id, body.status)
+    return {"ok": True, "status": body.status}
 
 
 @app.delete("/rooms/{room_id}")

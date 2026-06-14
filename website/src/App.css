@@ -6,6 +6,7 @@
   --color-primary-light: #2A4F7A;
   --color-primary-soft: rgba(31, 58, 95, 0.07);
   --color-accent: #D64A2E;
+  --color-success: #3E7C5A;   /* muted green — "active" status, on warm palette */
   --color-ink: #1C1B19;
   --color-bg: #FAF9F5;
   --color-bg-white: #FFFEFB;

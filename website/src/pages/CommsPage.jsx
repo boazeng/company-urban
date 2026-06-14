@@ -166,6 +166,18 @@ export default function CommsPage() {
     }
   }
 
+  async function setRoomStatus(roomId, status) {
+    try {
+      await fetch(`${API}/rooms/${roomId}/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      await loadRooms()
+    } catch {
+      setOnline(false)
+    }
+  }
+
   async function invite(agent) {
     if (!agent || activeId == null) return
     await fetch(`${API}/rooms/${activeId}/participants`, {
@@ -228,12 +240,14 @@ uvicorn app:app --port 5181 --reload</pre>
           )}
 
           {rooms.map((r) => (
-            <div key={r.id} className={`comms-room-row ${r.id === activeId ? 'active' : ''}`}>
+            <div key={r.id} className={`comms-room-row ${r.id === activeId ? 'active' : ''} ${r.status === 'closed' ? 'convo-closed' : 'convo-open'}`}>
               <button
                 className={`comms-room ${r.id === activeId ? 'active' : ''}`}
                 onClick={() => setActiveId(r.id)}
               >
                 <span className="comms-room-title">
+                  <span className={`convo-dot ${r.status === 'closed' ? 'closed' : 'open'}`}
+                        title={r.status === 'closed' ? 'שיחה שהסתיימה' : 'שיחה פעילה'} />
                   {r.kind === 'meeting' ? '👥 ' : ''}{r.title}
                 </span>
                 <span className="comms-room-parts">
@@ -259,6 +273,21 @@ uvicorn app:app --port 5181 --reload</pre>
                     <option value="" disabled>+ הזמן סוכן</option>
                     {notInRoom.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
+                )}
+                {activeId != null && activeRoom && (
+                  activeRoom.status === 'closed' ? (
+                    <button
+                      className="comms-chat-reopen"
+                      title="פתח מחדש את השיחה"
+                      onClick={() => setRoomStatus(activeId, 'active')}
+                    >↻ פתח מחדש</button>
+                  ) : (
+                    <button
+                      className="comms-chat-end"
+                      title="סיים את השיחה (נשארת בהיסטוריה)"
+                      onClick={() => setRoomStatus(activeId, 'closed')}
+                    >✓ סיים שיחה</button>
+                  )
                 )}
                 {activeId != null && (
                   <button
