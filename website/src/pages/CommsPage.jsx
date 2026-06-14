@@ -74,6 +74,20 @@ export default function CommsPage() {
     if (atBottomRef.current) scrollToBottom()
   }, [messages, busy])
 
+  // idle poll: while a room is open and no round is streaming, pick up out-of-band
+  // messages (e.g. דפנה's deep-research report, posted minutes after the round ended).
+  useEffect(() => {
+    if (activeId == null) return
+    const id = setInterval(async () => {
+      if (busy || pollRef.current) return  // a round is active → its own poll handles updates
+      try {
+        const msgs = await fetch(`${API}/rooms/${activeId}/messages`).then((x) => x.json())
+        setMessages(msgs)
+      } catch { /* transient — ignore */ }
+    }, 4000)
+    return () => clearInterval(id)
+  }, [activeId, busy])
+
   const activeRoom = rooms.find((r) => r.id === activeId)
 
   function stopPolling() {
