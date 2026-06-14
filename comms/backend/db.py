@@ -10,11 +10,17 @@ def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # wait (up to 3s) for a lock instead of erroring — reduces intermittent
+    # slowness/errors when polls and writes hit the DB concurrently.
+    conn.execute("PRAGMA busy_timeout = 3000")
     return conn
 
 
 def init_db():
     conn = get_conn()
+    # WAL: readers don't block the writer (and vice-versa) — removes the main
+    # source of intermittent 1–2s latency when polling while messages are written.
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS rooms (

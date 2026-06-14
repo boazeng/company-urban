@@ -14,6 +14,7 @@ export default function CommsPage() {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [online, setOnline] = useState(true)
+  const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [creating, setCreating] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null)
   const scroller = useRef(null)
@@ -52,14 +53,22 @@ export default function CommsPage() {
     return stopPolling
   }, [])
 
-  // switching rooms: stop any polling, reset, load that room's messages
+  // switching rooms: stop any polling, reset, load that room's messages.
+  // clear immediately so the panel switches instantly (the fetch can take 1–2s),
+  // and guard with `alive` so a slow response for the old room can't overwrite the new one.
   useEffect(() => {
     if (activeId == null) return
     stopPolling()
     setBusy(false)
     atBottomRef.current = true  // entering a room → start pinned to the latest message
+    setMessages([])             // instant: drop the previous room's messages right away
+    setLoadingMsgs(true)
+    let alive = true
     fetch(`${API}/rooms/${activeId}/messages`)
-      .then((x) => x.json()).then(setMessages).catch(() => setOnline(false))
+      .then((x) => x.json())
+      .then((m) => { if (alive) { setMessages(m); setLoadingMsgs(false) } })
+      .catch(() => { if (alive) { setLoadingMsgs(false); setOnline(false) } })
+    return () => { alive = false }
   }, [activeId])
 
   function scrollToBottom() {
@@ -78,14 +87,15 @@ export default function CommsPage() {
   // messages (e.g. דפנה's deep-research report, posted minutes after the round ended).
   useEffect(() => {
     if (activeId == null) return
+    let alive = true
     const id = setInterval(async () => {
       if (busy || pollRef.current) return  // a round is active → its own poll handles updates
       try {
         const msgs = await fetch(`${API}/rooms/${activeId}/messages`).then((x) => x.json())
-        setMessages(msgs)
+        if (alive) setMessages(msgs)
       } catch { /* transient — ignore */ }
     }, 4000)
-    return () => clearInterval(id)
+    return () => { alive = false; clearInterval(id) }
   }, [activeId, busy])
 
   const activeRoom = rooms.find((r) => r.id === activeId)
@@ -270,6 +280,9 @@ uvicorn app:app --port 5181 --reload</pre>
           </header>
 
           <div className="comms-stream" ref={scroller} onScroll={onStreamScroll}>
+            {loadingMsgs && messages.length === 0 && (
+              <div className="sys-line">טוען שיחה…</div>
+            )}
             {messages.map((m) => (
               m.author === 'מערכת' ? (
                 <div key={m.id} className="sys-line">{m.text}</div>
