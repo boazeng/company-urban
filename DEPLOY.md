@@ -24,6 +24,24 @@ _Alternative (single, native CDN):_ request an ACM cert for the domain in
 `us-east-1`, add `Aliases` + `ViewerCertificate` to the CloudFront distribution
 in `template.yaml`, and use a **DNS-only** (grey-cloud) CNAME instead.
 
+## The always-on box (comms + agent brains + Ran's Telegram bot)
+
+A separate Linux VM (`44.201.4.142` / `comms.newavera.co.il`) runs the rooms
+backend, the slash-command agent brains (`claude -p`), the hourly conductor
+pulse (cron → `run-conductor.sh`), and Ran's Telegram bot. It is **not** part of
+the SAM stack, so it has its own delivery — now wired into the same push:
+
+- **Auto (CI):** the `deploy-box` job in [deploy.yml](.github/workflows/deploy.yml)
+  runs [deploy/deploy-box.sh](deploy/deploy-box.sh) on every push to `main`.
+  Needs one repo secret — **`BOX_SSH_KEY`** = the contents of `~/.ssh/cu_box.pem`.
+  Until that secret is set, the job no-ops cleanly (CI stays green).
+- **Manual:** `bash deploy/deploy-box.sh` (tar-over-ssh; works from Git Bash too,
+  no rsync needed).
+- **What it syncs:** `comms/backend`, `.claude/commands`, `Agents` (cores +
+  STYLE), `goals/brands/structure/interfaces`, `deploy`. **Preserved on the box:**
+  `schedule/Schedule.md` (זובין live-edits it), `output/`, and `.env` (secrets via
+  `deploy/sync-box-env.sh`).
+
 ## Architecture (phased)
 
 | Phase | Component | AWS |

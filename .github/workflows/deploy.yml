@@ -97,17 +97,17 @@ jobs:
             --distribution-id "$CF_ID" \
             --paths "/*"
 
-  # ── The always-on Linux box (comms rooms + agent brains). Not part of the
-  #    SAM stack, so it needs its own delivery. Runs in parallel with `deploy`.
-  #    No-ops cleanly until the BOX_SSH_KEY secret is set, so it never breaks CI. ──
+  # ── The always-on Linux box (comms rooms + agent brains + Ran's Telegram bot).
+  #    Not part of the SAM stack, so it needs its own delivery. Runs in parallel
+  #    with `deploy`. No-ops cleanly until the BOX_SSH_KEY secret is set. ──
   deploy-box:
-    name: Sync comms backend to the box
+    name: Full sync to the box (comms + engines + cores + Ran bot)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy comms backend + restart (skips if no key configured)
+      - name: Deploy to box (skips if no key configured)
         env:
           BOX_SSH_KEY: ${{ secrets.BOX_SSH_KEY }}
         run: |
@@ -118,6 +118,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$BOX_SSH_KEY" > ~/.ssh/cu_box.pem
           chmod 600 ~/.ssh/cu_box.pem
-          # Reuses the same script you'd run by hand. It syncs only comms/backend/*.py,
-          # preserves זובין's live Schedule.md, and never touches the box .env.
-          bash deploy/deploy-comms-box.sh
+          # Full deploy: syncs comms backend + .claude/commands + cores/STYLE +
+          # context dirs, (re)deploys Ran's Telegram bot, restarts services.
+          # Preserves זובין's live Schedule.md, output/, and the box .env.
+          bash deploy/deploy-box.sh
