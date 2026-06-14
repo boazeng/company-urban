@@ -18,6 +18,9 @@ export default function CommsPage() {
   const [pendingDelete, setPendingDelete] = useState(null)
   const scroller = useRef(null)
   const pollRef = useRef(null)
+  // true while the view is pinned to the bottom. New messages auto-scroll ONLY then,
+  // so scrolling up to read earlier messages isn't interrupted while agents talk.
+  const atBottomRef = useRef(true)
 
   async function loadRooms() {
     const r = await fetch(`${API}/rooms`).then((x) => x.json())
@@ -54,12 +57,21 @@ export default function CommsPage() {
     if (activeId == null) return
     stopPolling()
     setBusy(false)
+    atBottomRef.current = true  // entering a room → start pinned to the latest message
     fetch(`${API}/rooms/${activeId}/messages`)
       .then((x) => x.json()).then(setMessages).catch(() => setOnline(false))
   }, [activeId])
 
-  useEffect(() => {
+  function scrollToBottom() {
     if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+  }
+  // track whether בועז is at the bottom; if he scrolled up, leave him there.
+  function onStreamScroll() {
+    const el = scroller.current
+    if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
+  useEffect(() => {
+    if (atBottomRef.current) scrollToBottom()
   }, [messages, busy])
 
   const activeRoom = rooms.find((r) => r.id === activeId)
@@ -90,6 +102,7 @@ export default function CommsPage() {
     if (!text || busy || activeId == null) return
     const roomId = activeId
     setDraft('')
+    atBottomRef.current = true  // sending my own message → jump to it
     setMessages((m) => [...m, { id: `tmp-${Date.now()}`, author: 'בועז', text }])
     setBusy(true)
     try {
@@ -242,7 +255,7 @@ uvicorn app:app --port 5181 --reload</pre>
             </div>
           </header>
 
-          <div className="comms-stream" ref={scroller}>
+          <div className="comms-stream" ref={scroller} onScroll={onStreamScroll}>
             {messages.map((m) => (
               m.author === 'מערכת' ? (
                 <div key={m.id} className="sys-line">{m.text}</div>
