@@ -6,6 +6,7 @@ so multi-agent meetings (with a chair agent) slot in later without migration.
 
 Run:  uvicorn app:app --port 5181 --reload   (from comms/backend)
 """
+import re
 import threading
 
 from fastapi import FastAPI, HTTPException
@@ -58,7 +59,13 @@ def _greeting(agent):
     """כלל 1 ב-comms/Room-Conduct.md — הצגה עצמית בכניסה לחדר (פעם אחת)."""
     role = agents.ROLES.get(agent, "")
     suffix = f" — {role}" if role else ""
-    return f"שלום, כאן {agent}{suffix}. מאזין; אענה כשיפנו אליי (@{agent})."
+    return f"שלום, כאן {agent}{suffix}. מאזין; אענה כשיפנו אליי (@{agent} או בשם)."
+
+
+def _addressed(agent, text):
+    """כלל 2 — פנייה לסוכן: ב-@<שם> או בשם בלבד. השם נבדק כמילה שלמה (גבול-מילה)
+    כדי שלא תהיה התאמה שגויה כשהשם הוא חלק ממילה אחרת (למשל 'רן' בתוך 'קרן')."""
+    return re.search(rf"(?<!\w){re.escape(agent)}(?!\w)", text) is not None
 
 
 @app.get("/agents")
@@ -157,8 +164,8 @@ def post_message(room_id: int, body: NewMessage):
 
     user_msg = db.add_message(room_id, agents.HUMAN, text)
 
-    # כלל 2 ב-comms/Room-Conduct.md — מדברים רק כשמתבקשים.
-    mentioned = [a for a in parts if f"@{a}" in text]
+    # כלל 2 ב-comms/Room-Conduct.md — מדברים רק כשמתבקשים (פנייה ב-@<שם> או בשם).
+    mentioned = [a for a in parts if _addressed(a, text)]
     non_listeners = [a for a in parts if a not in LISTENERS]
     if mentioned:                                       # פנייה מפורשת ב-@<שם>
         responders, summarizer = mentioned, None

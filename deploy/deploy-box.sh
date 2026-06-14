@@ -26,7 +26,7 @@ echo "→ [1/4] syncing vault subset (tar-over-ssh, with excludes — no rsync n
 tar czf - \
   --exclude='__pycache__' --exclude='*.pyc' --exclude='*.bak' \
   --exclude='.venv' --exclude='node_modules' \
-  comms/backend .claude/commands Agents goals brands structure interfaces deploy \
+  comms .claude/commands Agents goals brands structure interfaces deploy \
   | "${SSH[@]}" "mkdir -p '$DEST' && tar xzf - -C '$DEST'"
 
 echo "→ [2/4] seeding Schedule.md only if absent (זובין's live copy is left untouched)"
