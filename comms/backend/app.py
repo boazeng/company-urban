@@ -54,6 +54,13 @@ class NewParticipant(BaseModel):
     agent: str
 
 
+def _greeting(agent):
+    """כלל 1 ב-comms/Room-Conduct.md — הצגה עצמית בכניסה לחדר (פעם אחת)."""
+    role = agents.ROLES.get(agent, "")
+    suffix = f" — {role}" if role else ""
+    return f"שלום, כאן {agent}{suffix}. מאזין; אענה כשיפנו אליי (@{agent})."
+
+
 @app.get("/agents")
 def get_agents():
     return {"agents": agents.known_agents(), "roles": agents.roles()}
@@ -80,6 +87,9 @@ def post_room(body: NewRoom):
     speakers = [a for a in participants if a not in LISTENERS]
     kind = body.kind or ("meeting" if len(speakers) > 1 else "1:1")
     rid = db.create_room(body.title, kind, participants, body.chair)
+    # כלל 1 — כל משתתף מציג את עצמו פעם אחת בפתיחת החדר.
+    for a in participants:
+        db.add_message(rid, a, _greeting(a))
     return {"id": rid}
 
 
@@ -101,6 +111,8 @@ def post_participant(room_id: int, body: NewParticipant):
     if body.agent not in agents.known_agents():
         raise HTTPException(400, f"סוכן לא מוכר: {body.agent}")
     db.add_participant(room_id, body.agent)
+    # כלל 1 — הסוכן שנוסף מציג את עצמו בכניסתו.
+    db.add_message(room_id, body.agent, _greeting(body.agent))
     return {"ok": True}
 
 
@@ -145,20 +157,24 @@ def post_message(room_id: int, body: NewMessage):
 
     user_msg = db.add_message(room_id, agents.HUMAN, text)
 
+    # כלל 2 ב-comms/Room-Conduct.md — מדברים רק כשמתבקשים.
     mentioned = [a for a in parts if f"@{a}" in text]
-    if mentioned:
+    non_listeners = [a for a in parts if a not in LISTENERS]
+    if mentioned:                                       # פנייה מפורשת ב-@<שם>
         responders, summarizer = mentioned, None
-    elif chair and chair in parts and len(parts) > 1:
+    elif chair and chair in parts and len(parts) > 1:   # חדר ישיבה — היו״ר מנהל את הסבב
         responders = [a for a in parts if a != chair]
         summarizer = chair
-    else:
-        responders, summarizer = parts, None
+    elif len(parts) == 1:                               # סוכן יחיד (כולל מאזין) — שיחת 1:1
+        responders, summarizer = list(parts), None
+    elif len(non_listeners) == 1:                       # 1:1 אפקטיבי (סוכן + רן המאזין)
+        responders, summarizer = non_listeners, None
+    else:                                               # חדר קבוצתי ללא פנייה — כולם מאזינים
+        responders, summarizer = [], None
 
-    # מאזינים (רן) שותקים בסבב הרגיל אם יש מי שיענה — אלא אם פנו אליהם ב-@.
-    if not mentioned:
-        speakers = [a for a in responders if a not in LISTENERS]
-        if speakers:
-            responders = speakers
+    if not responders and not summarizer:
+        # אף אחד לא התבקש לדבר — החדר מאזין בשתיקה (כלל 2).
+        return {"messages": [user_msg], "round_active": False}
 
     INTERRUPT[room_id] = False
     ROUND_ACTIVE[room_id] = True
