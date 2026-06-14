@@ -6,9 +6,10 @@ directly in the room (not only via Ran relaying).
 Adding a command-agent = one line in COMMANDS.
 
 Heavy agents (deep research like דפנה) can't finish inside a chat turn — a real
-market study can run 30min+. For those, a deep-research request runs DETACHED in
-a background thread (no chat timeout); the room gets a fast acknowledgement now,
-and the finished report is posted back into the room when it's ready.
+market study can run 30min+. A `claude -p` that long is memory-heavy and OOM'd the
+small comms box, so on-box background research is OFF by default. When enabled on a
+box with RAM headroom (ALLOW_BOX_DEEP_RESEARCH=1), it runs DETACHED, single-flight,
+and posts the finished report back into the room.
 """
 import os
 import shutil
@@ -26,12 +27,18 @@ COMMANDS = {
     "דרור": "/dror",
 }
 
-# Agents whose deep mode is long-running → run detached + ack; never block the room.
+# Agents whose deep mode is long-running.
 HEAVY = {"דפנה"}
-# A request containing any of these = a deep job (run detached). Otherwise = quick chat.
+# A request containing any of these = a deep job. Otherwise = quick chat.
 DEEP_KEYWORDS = ("דוח מלא", "מחקר מעמיק", "מעמיק", "לעומק", "תחקרי", "מחקר שוק")
 CHAT_TIMEOUT = 180     # quick chat replies
-DEEP_TIMEOUT = 3600    # detached deep-research safety cap (1h) — raise if needed
+DEEP_TIMEOUT = 3600    # detached deep-research safety cap (1h)
+
+# A 30min+ `claude -p` OOM'd the small comms box. Heavy on-box research is OFF
+# unless explicitly enabled on a box with RAM headroom. Single-flight either way.
+ALLOW_BOX_DEEP_RESEARCH = os.environ.get("ALLOW_BOX_DEEP_RESEARCH", "") == "1"
+_deep_lock = threading.Lock()
+_deep_running = False
 
 
 def has_agent(agent):
@@ -49,16 +56,20 @@ def _wants_deep(text):
     return any(k in (text or "") for k in DEEP_KEYWORDS)
 
 
-def _run_claude(cmd, prompt_arg, timeout):
+def _run_claude(cmd, prompt_arg, timeout, low_priority=False):
     """Run `claude -p "<cmd> <prompt_arg>"` headless. Returns (reply, error)."""
     exe = shutil.which("claude")
     if not exe:
         return None, "claude CLI לא נמצא — זמין על השרת/מקומית"
     prompt = f"{cmd} {prompt_arg}".strip()
+    argv = [exe, "-p", prompt]
+    # על POSIX, מריצים מחקר כבד בעדיפות-CPU נמוכה כדי לא לחנוק את השרת.
+    if low_priority and os.name == "posix" and shutil.which("nice"):
+        argv = ["nice", "-n", "15"] + argv
     # ב-Windows צריך claude.CMD; מסירים CLAUDECODE כדי ש-claude -p לא יסרב על "סשן מקונן".
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     try:
-        out = subprocess.run([exe, "-p", prompt], capture_output=True, text=True,
+        out = subprocess.run(argv, capture_output=True, text=True,
                              encoding="utf-8", timeout=timeout, cwd=VAULT, env=env)
         return (out.stdout or "").strip() or (out.stderr or "").strip() or "(אין תשובה)", None
     except subprocess.TimeoutExpired:
@@ -70,18 +81,22 @@ def _run_claude(cmd, prompt_arg, timeout):
 def _deep_research(agent, cmd, message, room_id):
     """Background thread: run the full deep research (no chat timeout) and post the
     finished report back into the room when done."""
-    # מאלצים מצב 'דוח מלא' במנוע של דפנה, לא משנה איך נוסחה הבקשה.
-    prompt_arg = f"{message}\n\n(מצב: דוח מלא — בצע את המחקר המעמיק המלא)"
-    reply, err = _run_claude(cmd, prompt_arg, timeout=DEEP_TIMEOUT)
-    if room_id is None:
-        return
-    if err == "timeout":
-        db.add_message(room_id, agent,
-                       f"({agent}: המחקר נמשך מעבר לזמן המוקצב ונעצר. אפשר לצמצם את ההיקף ולנסות שוב.)")
-    elif err:
-        db.add_message(room_id, agent, f"({agent}: המחקר נכשל — {err})")
-    else:
-        db.add_message(room_id, agent, f"✅ סיימתי את המחקר המעמיק:\n\n{reply}")
+    global _deep_running
+    try:
+        prompt_arg = f"{message}\n\n(מצב: דוח מלא — בצע את המחקר המעמיק המלא)"
+        reply, err = _run_claude(cmd, prompt_arg, timeout=DEEP_TIMEOUT, low_priority=True)
+        if room_id is None:
+            return
+        if err == "timeout":
+            db.add_message(room_id, agent,
+                           f"({agent}: המחקר נמשך מעבר לזמן המוקצב ונעצר. אפשר לצמצם את ההיקף ולנסות שוב.)")
+        elif err:
+            db.add_message(room_id, agent, f"({agent}: המחקר נכשל — {err})")
+        else:
+            db.add_message(room_id, agent, f"✅ סיימתי את המחקר המעמיק:\n\n{reply}")
+    finally:
+        with _deep_lock:
+            _deep_running = False
 
 
 def make_chat(agent):
@@ -89,14 +104,23 @@ def make_chat(agent):
     cmd = COMMANDS[agent]
 
     def chat(history, room_id=None):  # room_id used to post async results back
+        global _deep_running
         message = _last_user(history)
-        # סוכן-מחקר כבד + בקשת עומק → רץ ברקע, מאשר מיד, ושולח את הדוח כשמוכן.
+        # סוכן-מחקר כבד + בקשת עומק.
         if agent in HEAVY and _wants_deep(message):
+            if not ALLOW_BOX_DEEP_RESEARCH:
+                # שרת ה-comms קטן מכדי להריץ מחקר עומק (30 דק׳+) בלי להיחנק.
+                return ("קיבלתי שזו בקשת **מחקר מעמיק**. כרגע מחקר עומק לא רץ על שרת ה-comms "
+                        "(הוא קטן מדי ועלול להיחנק). אפשר להריץ אותו כעבודה ייעודית במכונה "
+                        "מתאימה — `/dafna <נושא> דוח מלא`. בינתיים אני זמינה לשאלות מהירות.")
+            with _deep_lock:
+                if _deep_running:
+                    return "כבר רץ מחקר מעמיק כרגע — אסיים אותו ואז אפשר להזמין את הבא."
+                _deep_running = True
             threading.Thread(target=_deep_research,
                              args=(agent, cmd, message, room_id), daemon=True).start()
-            return ("קיבלתי — מתחילה **מחקר מעמיק**. זה ייקח זמן (עד חצי שעה ויותר): "
-                    "חיפוש רב-זוויתי, רשתות חברתיות, אתרים ומקורות, הצלבה ואימות. "
-                    "אני עובדת על זה ברקע — הדוח ייכתב ל-`output/dafna` ואשלח אותו לכאן כשיהיה מוכן.")
+            return ("קיבלתי — מתחילה **מחקר מעמיק**. זה ייקח זמן (עד חצי שעה ויותר). "
+                    "אני עובדת ברקע — הדוח ייכתב ל-`output/dafna` ואשלח אותו לכאן כשיהיה מוכן.")
         # ברירת מחדל — תשובת צ׳אט מהירה.
         reply, err = _run_claude(cmd, message, timeout=CHAT_TIMEOUT)
         if err == "timeout":
