@@ -96,3 +96,28 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "$CF_ID" \
             --paths "/*"
+
+  # ── The always-on Linux box (comms rooms + agent brains). Not part of the
+  #    SAM stack, so it needs its own delivery. Runs in parallel with `deploy`.
+  #    No-ops cleanly until the BOX_SSH_KEY secret is set, so it never breaks CI. ──
+  deploy-box:
+    name: Sync comms backend to the box
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy comms backend + restart (skips if no key configured)
+        env:
+          BOX_SSH_KEY: ${{ secrets.BOX_SSH_KEY }}
+        run: |
+          if [ -z "$BOX_SSH_KEY" ]; then
+            echo "BOX_SSH_KEY secret not set — skipping box deploy (no-op)."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$BOX_SSH_KEY" > ~/.ssh/cu_box.pem
+          chmod 600 ~/.ssh/cu_box.pem
+          # Reuses the same script you'd run by hand. It syncs only comms/backend/*.py,
+          # preserves זובין's live Schedule.md, and never touches the box .env.
+          bash deploy/deploy-comms-box.sh
