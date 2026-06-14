@@ -1,0 +1,21 @@
+[Unit]
+Description=Ran Telegram bot (thin channel -> ran_core, long polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+# ASCII path on the box (avoids the Hebrew Agents/מנכ״ל/רן path in the unit).
+WorkingDirectory=/home/ubuntu/company-urban/ran_bot
+# ran_core.env_val reads secrets from this file (RAN_BOT_TOKEN, ANTHROPIC_API_KEY, RAN_TOKEN, ...)
+Environment=SHARED_ENV=/home/ubuntu/company-urban/.env
+Environment=VAULT=/home/ubuntu/company-urban
+Environment=PYTHONUTF8=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/company-urban/ran_bot/.venv/bin/python /home/ubuntu/company-urban/ran_bot/RAN_BOT_TELEGRAM/ran_telegram_bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

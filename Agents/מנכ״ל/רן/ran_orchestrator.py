@@ -16,9 +16,9 @@ import shutil
 import subprocess
 import datetime
 
-VAULT = r"C:/Users/User/Aiprojects/obsi_comp"
+VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
 ROOMS_DIR = os.path.join(VAULT, "output", "ran", "conversations")
-COMMS_API = "http://localhost:5181"  # מערכת החדרים (comms) — לצירוף משתתפים
+COMMS_API = os.environ.get("COMMS_API", "http://localhost:5181")  # מערכת החדרים (comms) — לצירוף משתתפים
 
 # על השרת רן מוכנס אוטומטית לכל חדר חדש (זה ה-vision: "רן מצטרף לכל שיחה").
 RAN_AUTO_JOIN = True
