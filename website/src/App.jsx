@@ -1,6 +1,7 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import Header from './components/Header'
 import Footer from './components/Footer'
+import AppPage from './app/AppPage'
 import StructurePage from './pages/StructurePage'
 import TimelinePage from './pages/TimelinePage'
 import CalendarPage from './pages/CalendarPage'
@@ -11,6 +12,17 @@ import SystemAdminPage from './pages/SystemAdminPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 
 export default function App() {
+  const { pathname } = useLocation()
+
+  // the mobile "app" (/app) is a standalone full-screen shell — no desktop chrome.
+  if (pathname === '/app' || pathname.startsWith('/app/')) {
+    return (
+      <Routes>
+        <Route path="/app" element={<AppPage />} />
+      </Routes>
+    )
+  }
+
   return (
     <>
       <Header />

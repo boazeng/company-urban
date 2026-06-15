@@ -10,6 +10,7 @@ import os
 import re
 import threading
 
+import requests
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -239,6 +240,29 @@ def interrupt(room_id: int):
     msg = db.add_message(room_id, SYSTEM,
                          "✋ בועז ביקש את רשות הדיבור — עוצרים את הסבב, הרצפה שלך.")
     return {"ok": True, "message": msg}
+
+
+# ─── BoazTask read-only proxy ───
+# The mobile app (/app) shows בועז's task list. The BoazTask API needs a Bearer
+# token that must NOT ship in the browser bundle, so we proxy it here: the box
+# holds RAN_TOKEN (already whitelisted in deploy/sync-box-env.sh) and fetches
+# server-side. Read-only — the app only displays tasks, never writes.
+TASKS_API = os.environ.get("TASKS_API", "https://task.newavera.co.il/api/tasks/")
+RAN_TOKEN = os.environ.get("RAN_TOKEN", "")
+
+
+@app.get("/my-tasks")
+def my_tasks():
+    """Proxy בועז's open + recent tasks from BoazTask (agent-tasks hidden by the
+    API's default). Returns the raw list; the frontend sorts/filters for display."""
+    if not RAN_TOKEN:
+        raise HTTPException(status_code=503, detail="RAN_TOKEN not configured on the server")
+    try:
+        r = requests.get(TASKS_API, headers={"Authorization": f"Bearer {RAN_TOKEN}"}, timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"BoazTask API unreachable: {e}")
 
 
 @app.get("/health")
