@@ -39,12 +39,21 @@ TEMPLATE = """<!doctype html>
   #content code {{ background:#f0e9dc; padding:.1em .35em; border-radius:4px; }}
   #content blockquote {{ border-right:4px solid var(--rust); margin:0; padding:.2em 1em; color:#555; }}
   .meta {{ color:#8a7f6c; font-size:.85rem; margin-bottom:2em; }}
+  .bar {{ display:flex; gap:10px; margin-bottom:1.6em; }}
+  .bar button {{ font-family:inherit; font-size:.9rem; cursor:pointer; border:1px solid var(--steel);
+    background:#fff; color:var(--steel); border-radius:999px; padding:.45em 1.1em; }}
+  .bar button:hover {{ background:var(--steel); color:#fff; }}
+  @media print {{ .bar, .meta {{ display:none; }} body {{ background:#fff; }} }}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="bar">
+    <button onclick="navigator.clipboard.writeText(location.href); this.textContent='✓ הקישור הועתק';">📋 העתק קישור</button>
+    <button onclick="window.print();">⬇ שמור כ-PDF</button>
+  </div>
   <div id="content">טוען…</div>
-  <div class="meta">נשמר ב-S3 · נוצר אוטומטית מהדוח של דפנה</div>
+  <div class="meta">נוצר אוטומטית מהדוח של דפנה · הקישור קבוע — אפשר להעתיק מהכפתור למעלה</div>
 </div>
 <script type="text/markdown" id="src">
 {md}

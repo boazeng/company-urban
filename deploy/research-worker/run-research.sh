@@ -55,40 +55,55 @@ echo "================================"
 # a half-written dir. Non-fatal: the report still posts back even if the sync fails.
 saved_note=""
 if [ "${status}" = "ok" ] && [ -n "${S3_PREFIX}" ] && [ -d "${OUTPUT_DIR}" ]; then
+  # The report the agent just wrote (newest top-level .md in its output dir).
+  REPORT_MD="$(find "${OUTPUT_DIR}" -maxdepth 1 -name '*.md' -printf '%T@ %p\n' 2>/dev/null \
+               | sort -nr | head -1 | cut -d' ' -f2-)"
+  LINK=""
+  # Publish a readable HTML to the dashboard bucket (served via CloudFront) at a
+  # SHORT, ASCII, copy-friendly path: reports/<slug>/<date>-<hash>.html. Same report
+  # title → same hash → a STABLE link (re-runs update it in place, no encoded Hebrew).
+  if [ -n "${REPORTS_BUCKET:-}" ] && [ -n "${REPORTS_PUBLIC_BASE:-}" ] \
+     && [ -n "${REPORT_MD}" ] && [ -f "${REPORT_MD}" ]; then
+    HTML_FILE="${REPORT_MD%.md}.html"
+    if python3 /usr/local/bin/md_to_html.py "${REPORT_MD}" "${HTML_FILE}"; then
+      BN="$(basename "${REPORT_MD}" .md)"
+      RDATE="$(printf '%s' "${BN}" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)"
+      HASH="$(printf '%s' "${BN}" | sha1sum | cut -c1-6)"
+      REPORT_KEY="reports/${OUTPUT_SLUG}/${RDATE:-report}-${HASH}.html"
+      if aws s3 cp "${HTML_FILE}" "s3://${REPORTS_BUCKET}/${REPORT_KEY}" \
+           --content-type "text/html; charset=utf-8" \
+           --cache-control "public, max-age=60" --only-show-errors; then
+        LINK="${REPORTS_PUBLIC_BASE}/${REPORT_KEY}"
+        echo "→ published readable report: ${LINK}"
+        # Maintain the agent's own report index — pulled on every future run, so it
+        # knows what it already researched and can reference/update it. Dedup by link.
+        IDX="${OUTPUT_DIR}/reports-index.md"
+        TITLE="$(printf '%s' "${BN}" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2} *//')"
+        [ -f "${IDX}" ] || printf '# מאגר הדוחות של %s\n\n| תאריך | נושא | קישור |\n|------|------|------|\n' "${AGENT}" > "${IDX}"
+        grep -qF "${LINK}" "${IDX}" 2>/dev/null || \
+          printf '| %s | %s | %s |\n' "${RDATE:-?}" "${TITLE}" "${LINK}" >> "${IDX}"
+      else
+        echo "→ HTML publish failed (non-fatal)"
+      fi
+    else
+      echo "→ HTML render failed (non-fatal)"
+    fi
+  fi
+  # Push deliverables (report + reports-index.md + log) to the agent-output bucket.
   if aws s3 sync "${OUTPUT_DIR}/" "${S3_PREFIX}" --only-show-errors; then
     echo "→ saved deliverables to ${S3_PREFIX}"
-    saved_note="
-
-📁 התוצרים נשמרו ב-S3: ${S3_PREFIX}"
   else
     echo "→ S3 save failed (non-fatal)"
   fi
+  if [ -n "${LINK}" ]; then
+    saved_note="
 
-  # Publish a human-readable HTML of the report to the dashboard bucket (served via
-  # CloudFront) and hand back a clickable link — raw .md/s3:// URIs aren't openable
-  # in a browser. Non-fatal: on any hiccup we keep the S3 note above.
-  if [ -n "${REPORTS_BUCKET:-}" ] && [ -n "${REPORTS_PUBLIC_BASE:-}" ]; then
-    REPORT_MD="$(find "${OUTPUT_DIR}" -maxdepth 1 -name '*.md' -printf '%T@ %p\n' 2>/dev/null \
-                 | sort -nr | head -1 | cut -d' ' -f2-)"
-    if [ -n "${REPORT_MD}" ] && [ -f "${REPORT_MD}" ]; then
-      HTML_FILE="${REPORT_MD%.md}.html"
-      if python3 /usr/local/bin/md_to_html.py "${REPORT_MD}" "${HTML_FILE}"; then
-        REPORT_KEY="reports/${OUTPUT_SLUG}/$(basename "${HTML_FILE}")"
-        if aws s3 cp "${HTML_FILE}" "s3://${REPORTS_BUCKET}/${REPORT_KEY}" \
-             --content-type "text/html; charset=utf-8" \
-             --cache-control "public, max-age=60" --only-show-errors; then
-          ENC_KEY="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "${REPORT_KEY}")"
-          echo "→ published readable report: ${REPORTS_PUBLIC_BASE}/${ENC_KEY}"
-          saved_note="
+🔗 הדוח (קישור קבוע — לחיץ וניתן להעתקה): ${LINK}
+   בעמוד יש כפתורי \"📋 העתק קישור\" ו-\"⬇ שמור כ-PDF\"."
+  else
+    saved_note="
 
-🔗 לצפייה בדוח (נפתח בדפדפן): ${REPORTS_PUBLIC_BASE}/${ENC_KEY}"
-        else
-          echo "→ HTML publish failed (non-fatal)"
-        fi
-      else
-        echo "→ HTML render failed (non-fatal)"
-      fi
-    fi
+📁 התוצרים נשמרו ב-S3: ${S3_PREFIX}"
   fi
 fi
 
