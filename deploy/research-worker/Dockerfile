@@ -27,6 +27,7 @@ COPY structure ./structure
 COPY interfaces ./interfaces
 
 COPY deploy/research-worker/run-research.sh /usr/local/bin/run-research.sh
+COPY deploy/research-worker/md_to_html.py /usr/local/bin/md_to_html.py
 # strip CR so the shebang works even if the file was checked out with CRLF (Windows)
 RUN sed -i 's/\r$//' /usr/local/bin/run-research.sh \
     && chmod +x /usr/local/bin/run-research.sh \

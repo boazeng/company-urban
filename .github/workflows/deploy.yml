@@ -91,7 +91,8 @@ jobs:
           aws s3 sync website/dist/ s3://company-urban-frontend-${{ env.STAGE }}/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
-            --exclude "index.html"
+            --exclude "index.html" \
+            --exclude "reports/*"
 
           aws s3 cp website/dist/index.html \
             s3://company-urban-frontend-${{ env.STAGE }}/index.html \

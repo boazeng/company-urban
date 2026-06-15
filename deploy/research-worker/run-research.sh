@@ -63,6 +63,33 @@ if [ "${status}" = "ok" ] && [ -n "${S3_PREFIX}" ] && [ -d "${OUTPUT_DIR}" ]; th
   else
     echo "→ S3 save failed (non-fatal)"
   fi
+
+  # Publish a human-readable HTML of the report to the dashboard bucket (served via
+  # CloudFront) and hand back a clickable link — raw .md/s3:// URIs aren't openable
+  # in a browser. Non-fatal: on any hiccup we keep the S3 note above.
+  if [ -n "${REPORTS_BUCKET:-}" ] && [ -n "${REPORTS_PUBLIC_BASE:-}" ]; then
+    REPORT_MD="$(find "${OUTPUT_DIR}" -maxdepth 1 -name '*.md' -printf '%T@ %p\n' 2>/dev/null \
+                 | sort -nr | head -1 | cut -d' ' -f2-)"
+    if [ -n "${REPORT_MD}" ] && [ -f "${REPORT_MD}" ]; then
+      HTML_FILE="${REPORT_MD%.md}.html"
+      if python3 /usr/local/bin/md_to_html.py "${REPORT_MD}" "${HTML_FILE}"; then
+        REPORT_KEY="reports/${OUTPUT_SLUG}/$(basename "${HTML_FILE}")"
+        if aws s3 cp "${HTML_FILE}" "s3://${REPORTS_BUCKET}/${REPORT_KEY}" \
+             --content-type "text/html; charset=utf-8" \
+             --cache-control "public, max-age=60" --only-show-errors; then
+          ENC_KEY="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "${REPORT_KEY}")"
+          echo "→ published readable report: ${REPORTS_PUBLIC_BASE}/${ENC_KEY}"
+          saved_note="
+
+🔗 לצפייה בדוח (נפתח בדפדפן): ${REPORTS_PUBLIC_BASE}/${ENC_KEY}"
+        else
+          echo "→ HTML publish failed (non-fatal)"
+        fi
+      else
+        echo "→ HTML render failed (non-fatal)"
+      fi
+    fi
+  fi
 fi
 
 # Optional: post the finished report back into a comms room (Phase 3 adds the

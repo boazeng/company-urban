@@ -463,6 +463,11 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource: !Sub ${AgentOutputBucket.Arn}/*
+              # Publish the human-readable HTML under reports/ in the dashboard
+              # bucket, so it's served (clickable) via the existing CloudFront.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${FrontendBucket.Arn}/reports/*
 
   ResearchTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -486,6 +491,12 @@ Resources:
             # Where the worker syncs the agent's deliverables (prefix per agent).
             - Name: AGENT_OUTPUT_BUCKET
               Value: !Ref AgentOutputBucket
+            # Dashboard bucket + public base — the worker publishes a readable HTML
+            # under reports/<slug>/ and posts a clickable CloudFront link to the room.
+            - Name: REPORTS_BUCKET
+              Value: !Ref FrontendBucket
+            - Name: REPORTS_PUBLIC_BASE
+              Value: https://company-urban.newavera.co.il
           Secrets:
             - Name: ANTHROPIC_API_KEY
               ValueFrom: !Ref ResearchSecret

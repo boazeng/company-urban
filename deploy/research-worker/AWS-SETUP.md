@@ -148,3 +148,24 @@ this bucket**. If its S3 permissions are resource-scoped to `company-urban-front
 rather than account-wide S3, the `sam deploy` will fail creating `company-urban-agent-output-*`
 — add that bucket ARN to the role's S3 statement (one-line, account owner). Frontend
 bucket management is unchanged.
+
+## Phase 5 — clickable report links (served via the dashboard CDN)
+The room postback used to carry only an `s3://…` URI and a local path — neither opens
+in a browser, and raw `.md` is served without a charset so Hebrew renders as gibberish.
+Phase 5 makes דפנה hand back a **permanent, clickable link**:
+
+- The worker renders the report markdown to a self-contained, RTL, UTF-8 **HTML**
+  (`md_to_html.py`, client-side marked.js) and uploads it to the **dashboard bucket**
+  under `reports/<slug>/…html` (`Content-Type: text/html; charset=utf-8`).
+- That bucket is already a CloudFront origin, so the report is reachable at
+  `https://company-urban.newavera.co.il/reports/<slug>/<file>.html` — the worker
+  posts that URL into the room.
+
+The task role gets `s3:PutObject` on `…frontend-<stage>/reports/*` only; the container
+gets `REPORTS_BUCKET` + `REPORTS_PUBLIC_BASE` env. **`.github/workflows/deploy.yml`
+excludes `reports/*` from the dashboard `s3 sync --delete`** so a dashboard deploy
+doesn't wipe published reports.
+
+⚠️ **Access:** these links are public-unlisted (anyone with the URL can open them, same
+as the dashboard itself). Add auth at the CloudFront/edge layer if reports become
+sensitive. The private `.md` source stays in the agent-output bucket (no public access).
