@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force
 
-ENV VAULT=/vault
+# claude -p refuses --dangerously-skip-permissions as root → run as a non-root user.
+RUN useradd -m -u 10001 researcher
+ENV VAULT=/vault HOME=/home/researcher
 WORKDIR /vault
 
 # The vault subset דפנה reads at runtime: her command + STYLE + company context.
@@ -23,7 +25,12 @@ COPY structure ./structure
 COPY interfaces ./interfaces
 
 COPY deploy/research-worker/run-research.sh /usr/local/bin/run-research.sh
-RUN chmod +x /usr/local/bin/run-research.sh
+# strip CR so the shebang works even if the file was checked out with CRLF (Windows)
+RUN sed -i 's/\r$//' /usr/local/bin/run-research.sh \
+    && chmod +x /usr/local/bin/run-research.sh \
+    && chown -R researcher:researcher /vault /home/researcher
+
+USER researcher
 
 # Inputs are passed as env at run time:
 #   ANTHROPIC_API_KEY  (required) — auth for claude -p
