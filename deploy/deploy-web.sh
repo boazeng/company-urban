@@ -23,25 +23,23 @@ cd "$REPO/website"
 npm ci
 npm run build
 
-echo "→ syncing assets (long cache) — reports/* PRESERVED"
+echo "→ syncing assets (long cache) — reports/* PRESERVED, sw.js NEVER long-cached"
 aws s3 sync dist/ "s3://${BUCKET}/" \
   --delete \
   --cache-control "public, max-age=31536000, immutable" \
   --exclude "index.html" \
   --exclude "sw.js" \
-  --exclude "registerSW.js" \
-  --exclude "manifest.webmanifest" \
   --exclude "reports/*"
 
 echo "→ uploading no-cache entry points"
 aws s3 cp dist/index.html "s3://${BUCKET}/index.html" \
   --cache-control "no-cache" --content-type "text/html; charset=utf-8"
-aws s3 cp dist/sw.js "s3://${BUCKET}/sw.js" \
-  --cache-control "no-cache" --content-type "application/javascript"
-aws s3 cp dist/registerSW.js "s3://${BUCKET}/registerSW.js" \
-  --cache-control "no-cache" --content-type "application/javascript"
-aws s3 cp dist/manifest.webmanifest "s3://${BUCKET}/manifest.webmanifest" \
-  --cache-control "no-cache"
+# sw.js is the static self-destroying worker — must never be cached, or a stale
+# worker gets pinned for a year behind the CDN.
+if [ -f dist/sw.js ]; then
+  aws s3 cp dist/sw.js "s3://${BUCKET}/sw.js" \
+    --cache-control "no-cache, no-store, must-revalidate" --content-type "application/javascript"
+fi
 
 echo "→ invalidating CloudFront ($CF_ID)"
 aws cloudfront create-invalidation --distribution-id "$CF_ID" --paths "/*" \

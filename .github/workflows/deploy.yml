@@ -88,15 +88,27 @@ jobs:
       # ── Upload to S3 ────────────────────────────────────
       - name: Deploy dashboard to S3
         run: |
+          # Long-cache the hashed assets — but NEVER sw.js (it must always be
+          # revalidated, or a stale worker gets pinned for a year behind the CDN)
+          # and never index.html or the published reports.
           aws s3 sync website/dist/ s3://company-urban-frontend-${{ env.STAGE }}/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "index.html" \
+            --exclude "sw.js" \
             --exclude "reports/*"
 
           aws s3 cp website/dist/index.html \
             s3://company-urban-frontend-${{ env.STAGE }}/index.html \
             --cache-control "public, max-age=0, must-revalidate"
+
+          # sw.js: a static self-destroying worker — must not be cached.
+          if [ -f website/dist/sw.js ]; then
+            aws s3 cp website/dist/sw.js \
+              s3://company-urban-frontend-${{ env.STAGE }}/sw.js \
+              --content-type "application/javascript" \
+              --cache-control "no-cache, no-store, must-revalidate"
+          fi
 
       # ── Invalidate CloudFront cache ─────────────────────
       - name: Invalidate CloudFront
