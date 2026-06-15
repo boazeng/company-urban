@@ -4,8 +4,10 @@
 FROM node:22-slim
 
 # claude CLI + the small tools the entrypoint and the agent's Bash tool need.
+# awscli: the entrypoint syncs the agent's deliverables to/from S3 (creds come
+# from the ECS task role at runtime — no static keys).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git curl jq ca-certificates ripgrep \
+      git curl jq ca-certificates ripgrep awscli \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force

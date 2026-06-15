@@ -122,3 +122,29 @@ restarts comms but doesn't pip-install comms deps).
 Once a–c are done: `@דפנה תחקרי לעומק …` in a room → instant ack → a Fargate task runs
 the research → the report lands back in the room. Until then, `cmd_brain` sees no
 Fargate config and replies that there's no run target (no harm).
+
+## Phase 4 — persist deliverables to S3 (so reports survive the container)
+The Fargate container is ephemeral: anything the agent wrote to `output/<slug>/`
+vanished when the task ended (only the chat summary survived). Phase 4 adds an
+**agent-output bucket** — one bucket, a prefix per agent:
+
+```
+s3://company-urban-agent-output-<stage>/<slug>/...     # e.g. dafna/2026-06-15 מחקר שוק....md
+```
+
+The worker (`run-research.sh`) now, around the `claude -p` run:
+- **pulls** `s3://…/<slug>/` → `output/<slug>/` **before** the run, so the agent can
+  reference and build on its own prior materials (`/dafna` step 2 checks them);
+- **pushes** `output/<slug>/` → `s3://…/<slug>/` **after** a successful run, and
+  includes the S3 location in the report it posts back to the room.
+
+`<slug>` defaults to the command name (`/dafna` → `dafna`); override with `OUTPUT_SLUG`.
+Credentials come from the task role (no static keys) — the template grants the
+`ResearchTaskRole` `s3:ListBucket` + `Get/Put/DeleteObject` scoped to this bucket only,
+and passes `AGENT_OUTPUT_BUCKET` into the container. The bucket blocks all public access.
+
+**Deploy note:** the CI deploy role (`company-urban-deploy`) must be able to **create
+this bucket**. If its S3 permissions are resource-scoped to `company-urban-frontend-*`
+rather than account-wide S3, the `sam deploy` will fail creating `company-urban-agent-output-*`
+— add that bucket ARN to the role's S3 statement (one-line, account owner). Frontend
+bucket management is unchanged.

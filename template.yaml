@@ -70,6 +70,23 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
 
+  # ── Agent output store ──────────────────────────────
+  # One bucket holding every agent's deliverables, a folder (prefix) per agent:
+  #   s3://company-urban-agent-output-<stage>/<agent-slug>/...
+  # The research worker syncs an agent's output/<slug> dir to its prefix after a
+  # run (so reports survive the ephemeral container) and pulls it back before a
+  # run (so the agent can reference its own prior materials). Private — no public
+  # access; reached only via the worker's task role.
+  AgentOutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub company-urban-agent-output-${Stage}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
   # ── API Gateway (HTTP API) ──────────────────────────
   ApiGateway:
     Type: AWS::Serverless::HttpApi
@@ -420,7 +437,8 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref ResearchSecret
 
-  # The container's own role — it only calls Claude + posts back over HTTPS, no AWS APIs.
+  # The container's own role — calls Claude + posts back over HTTPS, and syncs the
+  # agent's deliverables to/from its prefix in the agent-output bucket.
   ResearchTaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -431,6 +449,20 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: agent-output-rw
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt AgentOutputBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub ${AgentOutputBucket.Arn}/*
 
   ResearchTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -450,6 +482,10 @@ Resources:
         - Name: research
           Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/company-urban-research-worker-${Stage}:latest
           Essential: true
+          Environment:
+            # Where the worker syncs the agent's deliverables (prefix per agent).
+            - Name: AGENT_OUTPUT_BUCKET
+              Value: !Ref AgentOutputBucket
           Secrets:
             - Name: ANTHROPIC_API_KEY
               ValueFrom: !Ref ResearchSecret
@@ -496,3 +532,6 @@ Outputs:
   ResearchSecretArn:
     Description: Secrets Manager ARN for ANTHROPIC_API_KEY (set its value once)
     Value: !Ref ResearchSecret
+  AgentOutputBucketName:
+    Description: Bucket holding every agent's deliverables (prefix per agent)
+    Value: !Ref AgentOutputBucket
