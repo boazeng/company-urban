@@ -97,6 +97,32 @@ def _launch_fargate_research(topic, room_id):
     )
 
 
+def _sync_agent_output_from_s3(slug):
+    """Download the agent's S3 deliverables (.md: reports + reports-index + log) into
+    output/<slug>/ so CHAT mode on the box can see what the Fargate worker produced —
+    otherwise chat-דפנה is blind to her own reports and wrongly says 'there's no link'."""
+    bucket = os.environ.get("AGENT_OUTPUT_BUCKET", "")
+    if not bucket or not slug:
+        return
+    try:
+        import os.path
+        import boto3
+        s3 = boto3.client("s3", region_name=ECS_REGION)
+        dest = os.path.join(VAULT, "output", slug)
+        os.makedirs(dest, exist_ok=True)
+        prefix = f"{slug}/"
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                rel = obj["Key"][len(prefix):]
+                if not rel or not rel.endswith(".md"):
+                    continue
+                target = os.path.join(dest, rel)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                s3.download_file(bucket, obj["Key"], target)
+    except Exception:  # noqa: BLE001
+        pass  # non-fatal — chat still works, just without S3 freshness
+
+
 def has_agent(agent):
     return agent in COMMANDS
 
@@ -189,7 +215,10 @@ def make_chat(agent):
                              args=(agent, cmd, message, room_id), daemon=True).start()
             return ("קיבלתי — מתחילה **מחקר מעמיק**. זה ייקח זמן (עד חצי שעה ויותר). "
                     "אני עובדת ברקע — הדוח ייכתב ל-`output/dafna` ואשלח אותו לכאן כשיהיה מוכן.")
-        # ברירת מחדל — תשובת צ׳אט מהירה.
+        # ברירת מחדל — תשובת צ׳אט מהירה. לסוכן עם תפוקות ב-S3 (דפנה) — נסנכרן קודם את
+        # הדוחות + reports-index מ-S3, כדי שהצ׳אט יידע על מה שה-worker הפיק (קישורים/סטטוס).
+        if agent in HEAVY:
+            _sync_agent_output_from_s3(cmd.lstrip("/"))
         reply, err = _run_claude(cmd, message, timeout=CHAT_TIMEOUT)
         if err == "timeout":
             return f"({agent} לא ענה בזמן)"
