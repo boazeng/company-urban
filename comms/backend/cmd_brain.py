@@ -29,8 +29,22 @@ COMMANDS = {
 
 # Agents whose deep mode is long-running.
 HEAVY = {"דפנה"}
-# A request containing any of these = a deep job. Otherwise = quick chat.
-DEEP_KEYWORDS = ("דוח מלא", "מחקר מעמיק", "מעמיק", "לעומק", "תחקרי", "מחקר שוק")
+# Deep-job detection. The old exact-substring list was brittle — natural phrasings
+# like "תריצי את המחקר המלא" or "תוסיפי לדוח נספח" silently fell through to quick
+# chat (and timed out). Two layers now:
+#   1. strong standalone phrases — any one of these alone means "go deep";
+#   2. otherwise, a research/report NOUN + an action/qualifier together = deep.
+# Quick questions ("מה גודל השוק?", "מה כתוב בדוח?") still stay fast — they have a
+# noun but no action verb, or no noun at all.
+DEEP_KEYWORDS = ("דוח מלא", "מחקר מלא", "מחקר מעמיק", "מעמיק", "לעומק", "תחקרי", "מחקר שוק")
+_DEEP_NOUNS = ("מחקר", "דוח", "נספח", "סקירה")
+_DEEP_ACTIONS = ("מלא", "מעמיק", "לעומק",
+                 "תריצי", "הריצי", "תריץ", "הרץ",
+                 "תכיני", "הכיני", "תכין", "הכן",
+                 "תפיקי", "הפיקי", "תפיק", "הפק",
+                 "תרחיבי", "הרחיבי", "תרחיב", "הרחב",
+                 "תעדכני", "עדכני", "תעדכן", "עדכן",
+                 "תוסיפי", "הוסיפי", "תוסיף", "הוסף")
 CHAT_TIMEOUT = 180     # quick chat replies
 DEEP_TIMEOUT = 3600    # detached deep-research safety cap (1h)
 
@@ -95,7 +109,10 @@ def _last_user(history):
 
 
 def _wants_deep(text):
-    return any(k in (text or "") for k in DEEP_KEYWORDS)
+    t = text or ""
+    if any(k in t for k in DEEP_KEYWORDS):
+        return True
+    return any(n in t for n in _DEEP_NOUNS) and any(a in t for a in _DEEP_ACTIONS)
 
 
 def _run_claude(cmd, prompt_arg, timeout, low_priority=False):
