@@ -37,6 +37,13 @@ HEAVY = {"דפנה"}
 # Quick questions ("מה גודל השוק?", "מה כתוב בדוח?") still stay fast — they have a
 # noun but no action verb, or no noun at all.
 DEEP_KEYWORDS = ("דוח מלא", "מחקר מלא", "מחקר מעמיק", "מעמיק", "לעומק", "תחקרי", "מחקר שוק")
+# A question ABOUT an existing report (where/which/status/link) must stay in fast
+# chat — it should NOT spawn a fresh research. Without this, "אילו דוחות הפקת?"
+# matched noun(דוח)+action(הפק) and wrongly launched a new Fargate job.
+STATUS_WORDS = ("איפה", "אילו", "איזה", "סטטוס", "קישור", "לינק", "כבר הפקת",
+                "כבר עשית", "מה הקישור", "מה הסטטוס", "היכן")
+# ...unless the user ALSO gives an explicit run-imperative — then honor the deep request.
+EXPLICIT_DEEP = ("דוח מלא", "מחקר מעמיק", "תחקרי", "תריצי", "הריצי")
 _DEEP_NOUNS = ("מחקר", "דוח", "נספח", "סקירה")
 _DEEP_ACTIONS = ("מלא", "מעמיק", "לעומק",
                  "תריצי", "הריצי", "תריץ", "הרץ",
@@ -105,8 +112,7 @@ def _sync_agent_output_from_s3(slug):
     if not bucket or not slug:
         return
     try:
-        import os.path
-        import boto3
+        import boto3  # lazy — only needed when S3 sync runs
         s3 = boto3.client("s3", region_name=ECS_REGION)
         dest = os.path.join(VAULT, "output", slug)
         os.makedirs(dest, exist_ok=True)
@@ -136,6 +142,10 @@ def _last_user(history):
 
 def _wants_deep(text):
     t = text or ""
+    # Status/link question about an existing report → fast chat, unless an explicit
+    # run-imperative is also present (e.g. "תעדכן את הדוח... תחקרי לעומק").
+    if any(s in t for s in STATUS_WORDS) and not any(e in t for e in EXPLICIT_DEEP):
+        return False
     if any(k in t for k in DEEP_KEYWORDS):
         return True
     return any(n in t for n in _DEEP_NOUNS) and any(a in t for a in _DEEP_ACTIONS)
