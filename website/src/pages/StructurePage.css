@@ -139,6 +139,36 @@
   box-shadow: var(--shadow-lg);
   border-color: var(--color-primary);
 }
+/* round agent portrait at the top of each card */
+.node-avatar {
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--color-primary-soft);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  flex: none;
+}
+.node-avatar-lg { width: 76px; height: 76px; margin-bottom: 10px; }
+.node-avatar-md { width: 60px; height: 60px; margin-bottom: 8px; }
+.node-avatar-sm { width: 34px; height: 34px; margin-bottom: 5px; }
+/* initials shown if a portrait is missing or fails to load */
+.node-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  font-family: var(--font-family-en);
+}
+.node-avatar-lg.node-avatar-fallback { font-size: 1.5rem; }
+.node-avatar-md.node-avatar-fallback { font-size: 1.15rem; }
+.node-avatar-sm.node-avatar-fallback { font-size: 0.75rem; }
+/* CEO card is dark — give its portrait a light ring */
+.node-ceo .node-avatar { border-color: rgba(244, 241, 234, 0.55); }
+/* assistant (staff) card uses the accent colour scheme */
+.node-staff .node-avatar { border-color: var(--color-accent); }
+
 .node-level {
   font-size: 0.64rem;
   font-weight: 700;

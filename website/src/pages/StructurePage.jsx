@@ -1,13 +1,38 @@
 import { useMemo, useState } from 'react'
 import structureRaw from '../../../structure/Structure.md?raw'
 import { parseMarkdownTable, colIndex } from '../lib/mdTable'
+import { avatarFor, initialsFor } from '../lib/avatars'
 import './StructurePage.css'
+
+/* Round portrait for an agent. Falls back to the agent's initials if no
+   portrait is mapped or the image fails to load. */
+function Avatar({ name, size }) {
+  const src = avatarFor(name)
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
+    return (
+      <div className={`node-avatar node-avatar-fallback node-avatar-${size}`} aria-hidden="true">
+        {initialsFor(name)}
+      </div>
+    )
+  }
+  return (
+    <img
+      className={`node-avatar node-avatar-${size}`}
+      src={src}
+      alt={name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  )
+}
 
 function NodeCard({ node, root, staff, showPurpose }) {
   /* personal assistant — compact card: just the name + a small tag */
   if (staff) {
     return (
       <div className="node node-staff">
+        <Avatar name={node.name} size="sm" />
         <span className="node-role">{node.name}</span>
         <span className="node-staff-tag">עוזר אישי</span>
       </div>
@@ -19,6 +44,7 @@ function NodeCard({ node, root, staff, showPurpose }) {
   const personalName = node.shem && node.shem !== '—' ? node.shem : ''
   return (
     <div className={`node ${root ? 'node-ceo' : ''}`}>
+      <Avatar name={node.name} size={root ? 'lg' : 'md'} />
       <span className="node-level">{`רמה ${node.level}`}</span>
       {personalName ? (
         <>
