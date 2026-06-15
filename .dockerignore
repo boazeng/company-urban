@@ -1,0 +1,11 @@
+# Keep the Docker build context small (the research-worker build uses repo root
+# as context). Only heavy/generated dirs — nothing the worker image COPYs.
+.git/
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+output/
+*.log
+website/dist/
