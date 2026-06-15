@@ -9,6 +9,13 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       includeAssets: ['apple-touch-icon.png'],
+      // The agents' static report HTML lives under /reports/. Without this the
+      // service worker's navigation fallback served the SPA's index.html for
+      // those URLs — so a report link landed on the dashboard instead of the
+      // report. Exclude /reports/ so those navigations hit the real files.
+      workbox: {
+        navigateFallbackDenylist: [/^\/reports\//],
+      },
       manifest: {
         name: 'company framework',
         short_name: 'Tasks',

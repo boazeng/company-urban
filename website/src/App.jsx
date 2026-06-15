@@ -8,6 +8,7 @@ import CalendarPage from './pages/CalendarPage'
 import InterfacesPage from './pages/InterfacesPage'
 import GoalsPage from './pages/GoalsPage'
 import CommsPage from './pages/CommsPage'
+import AgentPage from './pages/AgentPage'
 import SystemAdminPage from './pages/SystemAdminPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/goals" element={<GoalsPage />} />
           <Route path="/comms" element={<CommsPage />} />
+          <Route path="/agent/:slug" element={<AgentPage />} />
           <Route path="/interfaces" element={<InterfacesPage />} />
           <Route path="/admin" element={<SystemAdminPage />} />
           <Route path="*" element={<StructurePage />} />

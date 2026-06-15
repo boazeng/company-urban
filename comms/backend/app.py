@@ -17,8 +17,23 @@ from pydantic import BaseModel
 
 import db
 import agents
+import cmd_brain
 
 app = FastAPI(title="Agent Company — Comms")
+
+VAULT = os.environ.get("VAULT", r"C:/Users/User/Aiprojects/obsi_comp")
+AGENT_OUTPUT_BUCKET = os.environ.get("AGENT_OUTPUT_BUCKET", "")
+S3_REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+# Hebrew agent name ⇄ English slug. The slug keys the agent's S3 deliverables
+# (output/<slug>/) and its definition file (.claude/commands/<slug>.md), and is
+# the URL segment for the agent screen (/agent/<slug>).
+AGENT_SLUGS = {
+    "דפנה": "dafna", "דרור": "dror", "עומרי": "omri", "גיא": "guy",
+    "רונית": "ronit", "רן": "ran", "זובין": "conductor",
+    "מנכ״ל": "ceo", "סמנכ״ל כספים": "cfo", "סמנכ״ל תפעול": "coo",
+}
+SLUG_TO_NAME = {v: k for k, v in AGENT_SLUGS.items()}
 
 SYSTEM = "מערכת"
 # רן מצורף אוטומטית לכל חדר (Front Door). הוא "מאזין": נוכח בכל חדר אך עונה רק
@@ -263,6 +278,92 @@ def my_tasks():
         return r.json()
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"BoazTask API unreachable: {e}")
+
+
+# ─── Agent screen ───
+# One screen per agent (reached from the org chart): its works (reports), its
+# main definition MD, its run log, and a small chat about its material.
+class AgentChat(BaseModel):
+    text: str
+    history: list[dict] = []  # prior turns [{author, text}] for light context
+
+
+def _s3_text(key):
+    """Read a UTF-8 text object from the agent-output bucket; '' if missing/unset."""
+    if not AGENT_OUTPUT_BUCKET:
+        return ""
+    try:
+        import boto3
+        s3 = boto3.client("s3", region_name=S3_REGION)
+        obj = s3.get_object(Bucket=AGENT_OUTPUT_BUCKET, Key=key)
+        return obj["Body"].read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — missing object / no creds → just empty
+        return ""
+
+
+def _parse_reports_index(md):
+    """Parse the agent's reports-index.md markdown table into [{date,topic,link}].
+    Skips the header/separator and the index's own self-published row."""
+    out = []
+    for line in md.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        date, topic, link = cells[0], cells[1], cells[2]
+        if date in ("תאריך", "") or set(date) <= {"-", ":", " "}:
+            continue  # header or separator row
+        if topic == "reports-index" or not link.startswith("http"):
+            continue  # the index self-row / non-link row — not a real report
+        out.append({"date": date, "topic": topic, "link": link})
+    out.reverse()  # newest first
+    return out
+
+
+@app.get("/agents/{slug}/profile")
+def agent_profile(slug: str):
+    name = SLUG_TO_NAME.get(slug)
+    if not name:
+        raise HTTPException(404, f"סוכן לא מוכר: {slug}")
+    md = ""
+    md_path = os.path.join(VAULT, ".claude", "commands", f"{slug}.md")
+    if os.path.exists(md_path):
+        with open(md_path, encoding="utf-8") as f:
+            md = f.read()
+    reports = _parse_reports_index(_s3_text(f"{slug}/reports-index.md"))
+    log = _s3_text(f"{slug}/log/runs.log")
+    has_chat = agents._brain(name) is not None
+    return {"name": name, "slug": slug, "role": agents.ROLES.get(name, ""),
+            "md": md, "reports": reports, "log": log, "has_chat": has_chat}
+
+
+@app.post("/agents/{slug}/chat")
+def agent_chat(slug: str, body: AgentChat):
+    """Small chat on the agent screen — Q&A about the agent's existing material.
+    A new deep research needs a room to post the finished report back to, so we
+    steer those requests to תקשורת instead of orphan-launching here."""
+    name = SLUG_TO_NAME.get(slug)
+    if not name:
+        raise HTTPException(404, f"סוכן לא מוכר: {slug}")
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "טקסט ריק")
+    if name in cmd_brain.HEAVY and cmd_brain._wants_deep(text):
+        return {"reply": ("כאן אפשר לשאול על החומר הקיים שלי. להפקת דוח חדש / מחקר מעמיק — "
+                          "פִתחו חדר ב'תקשורת' ובקשו שם 'דוח מלא', כדי שהדוח יישלח אליכם כשיהיה מוכן.")}
+    msgs = []
+    for h in (body.history or []):
+        a, t = h.get("author"), h.get("text")
+        if a and t:
+            msgs.append({"author": a, "text": t})
+    msgs.append({"author": agents.HUMAN, "text": text})
+    try:
+        reply = agents.agent_reply(name, msgs, room_id=None)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"שגיאה במוח של {name}: {e}")
+    return {"reply": reply or "(אין תשובה)"}
 
 
 @app.get("/health")

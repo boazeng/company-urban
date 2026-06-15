@@ -16,3 +16,19 @@ export const AGENT_ROLES = {
   'גיא': 'שירות לקוחות חניה',
   'זובין': 'מנצח — תזמון',
 }
+
+/* Hebrew name → English slug. The slug is the agent-screen URL segment
+   (/agent/<slug>) and keys the agent's deliverables + definition file on the
+   backend. Must match AGENT_SLUGS in comms/backend/app.py. */
+export const AGENT_SLUGS = {
+  'רונית': 'ronit',
+  'רן': 'ran',
+  'מנכ״ל': 'ceo',
+  'סמנכ״ל כספים': 'cfo',
+  'סמנכ״ל תפעול': 'coo',
+  'עומרי': 'omri',
+  'גיא': 'guy',
+  'דפנה': 'dafna',
+  'זובין': 'conductor',
+  'דרור': 'dror',
+}

@@ -323,3 +323,15 @@
   .tree { --gap: 26px; }
   .node { padding: 12px 16px; max-width: 190px; }
 }
+
+/* clickable agent cards — open the agent screen */
+.node-clickable { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+.node-clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--rust, #b4541f);
+  box-shadow: 0 8px 22px rgba(47, 72, 88, 0.16);
+}
+.node-clickable:focus-visible {
+  outline: 2px solid var(--rust, #b4541f);
+  outline-offset: 2px;
+}

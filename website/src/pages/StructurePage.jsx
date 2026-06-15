@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import structureRaw from '../../../structure/Structure.md?raw'
 import { parseMarkdownTable, colIndex } from '../lib/mdTable'
 import { avatarFor, initialsFor } from '../lib/avatars'
+import { AGENT_SLUGS } from '../lib/agents'
 import './StructurePage.css'
 
 /* Round portrait for an agent. Falls back to the agent's initials if no
@@ -28,10 +30,23 @@ function Avatar({ name, size }) {
 }
 
 function NodeCard({ node, root, staff, showPurpose }) {
+  const navigate = useNavigate()
+  const slug = AGENT_SLUGS[node.name]
+  const open = slug ? () => navigate(`/agent/${slug}`) : undefined
+  const openProps = open
+    ? {
+        onClick: open,
+        role: 'button',
+        tabIndex: 0,
+        title: `פתח את מסך הסוכן — ${node.name}`,
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } },
+      }
+    : {}
+
   /* personal assistant — compact card: just the name + a small tag */
   if (staff) {
     return (
-      <div className="node node-staff">
+      <div className={`node node-staff ${slug ? 'node-clickable' : ''}`} {...openProps}>
         <Avatar name={node.name} size="sm" />
         <span className="node-role">{node.name}</span>
         <span className="node-staff-tag">עוזר אישי</span>
@@ -43,7 +58,7 @@ function NodeCard({ node, root, staff, showPurpose }) {
      is already the role. role-only nodes keep role bold + English subtitle. */
   const personalName = node.shem && node.shem !== '—' ? node.shem : ''
   return (
-    <div className={`node ${root ? 'node-ceo' : ''}`}>
+    <div className={`node ${root ? 'node-ceo' : ''} ${slug ? 'node-clickable' : ''}`} {...openProps}>
       <Avatar name={node.name} size={root ? 'lg' : 'md'} />
       <span className="node-level">{`רמה ${node.level}`}</span>
       {personalName ? (
@@ -59,7 +74,8 @@ function NodeCard({ node, root, staff, showPurpose }) {
       )}
       {showPurpose && node.purpose && <span className="node-purpose">{node.purpose}</span>}
       {node.link && (
-        <a className="node-link" href={node.link} target="_blank" rel="noopener noreferrer">
+        <a className="node-link" href={node.link} target="_blank" rel="noopener noreferrer"
+           onClick={(e) => e.stopPropagation()}>
           🔧 עורך התסריט
         </a>
       )}
