@@ -66,6 +66,18 @@ jobs:
               PriorityPassword="${{ secrets.PRIORITY_PASSWORD || 'not-configured' }}" \
               RoutingScriptId="guy-parking-service"
 
+      # ── Build + push the deep-research worker image to ECR ──
+      # (SAM deploy above created the ECR repo; push :latest into it.)
+      - name: Build & push research-worker image
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          REPO="$REGISTRY/company-urban-research-worker-${{ env.STAGE }}"
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin "$REGISTRY"
+          docker build -f deploy/research-worker/Dockerfile -t "$REPO:latest" .
+          docker push "$REPO:latest"
+
       # ── Build the dashboard (Vite bakes in the vault markdown) ──
       - name: Build dashboard
         run: |

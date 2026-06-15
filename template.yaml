@@ -307,6 +307,159 @@ Resources:
             ResponseCode: 200
             ResponsePagePath: /index.html
 
+  # ════════ Deep-research worker (Fargate per-job) ════════
+  # Heavy /dafna research runs as a one-off Fargate task — isolated from the
+  # small comms box, pay-per-second, no idle cost. comms triggers ecs:RunTask
+  # (Phase 3); the container posts the report back over HTTPS.
+
+  # Image registry for the worker (CI builds + pushes :latest here).
+  ResearchWorkerRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub company-urban-research-worker-${Stage}
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
+
+  # ANTHROPIC_API_KEY for the worker — created EMPTY on purpose; set the value once
+  # (see deploy/research-worker/AWS-SETUP.md) so CFN never overwrites it on redeploy.
+  ResearchSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub company-urban-research-anthropic-key-${Stage}
+      Description: ANTHROPIC_API_KEY for the deep-research Fargate worker. Set value manually once.
+
+  ResearchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/company-urban-research-${Stage}
+      RetentionInDays: 30
+
+  ResearchCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub company-urban-research-${Stage}
+
+  # Minimal public-subnet VPC: a Fargate task with a public IP reaches the internet
+  # directly (no NAT gateway → no hourly cost). Egress-only SG, no ingress.
+  ResearchVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub company-urban-research-${Stage}
+
+  ResearchIgw:
+    Type: AWS::EC2::InternetGateway
+
+  ResearchIgwAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ResearchVpc
+      InternetGatewayId: !Ref ResearchIgw
+
+  ResearchSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ResearchVpc
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+
+  ResearchRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ResearchVpc
+
+  ResearchDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: ResearchIgwAttach
+    Properties:
+      RouteTableId: !Ref ResearchRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref ResearchIgw
+
+  ResearchSubnetRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ResearchSubnet
+      RouteTableId: !Ref ResearchRouteTable
+
+  ResearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Egress-only SG for the deep-research Fargate worker
+      VpcId: !Ref ResearchVpc
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  # Pulls the image, writes logs, reads the ANTHROPIC_API_KEY secret.
+  ResearchExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-anthropic-secret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ResearchSecret
+
+  # The container's own role — it only calls Claude + posts back over HTTPS, no AWS APIs.
+  ResearchTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  ResearchTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub company-urban-research-${Stage}
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: "2048"      # 2 vCPU
+      Memory: "8192"   # 8 GB — headroom so deep research never OOMs
+      ExecutionRoleArn: !GetAtt ResearchExecutionRole.Arn
+      TaskRoleArn: !GetAtt ResearchTaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: research
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/company-urban-research-worker-${Stage}:latest
+          Essential: true
+          Secrets:
+            - Name: ANTHROPIC_API_KEY
+              ValueFrom: !Ref ResearchSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ResearchLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: research
+
 Outputs:
   CloudFrontUrl:
     Description: Dashboard URL (CloudFront)
@@ -323,3 +476,23 @@ Outputs:
   GuyWebhookUrl:
     Description: WhatsApp webhook URL for Guy (configure in Meta)
     Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/api/whatsapp/webhook
+
+  # ── Deep-research worker (Phase 3 / comms RunTask needs these) ──
+  ResearchEcrRepoUri:
+    Description: ECR repo URI to push the worker image to (CI uses this)
+    Value: !GetAtt ResearchWorkerRepo.RepositoryUri
+  ResearchClusterArn:
+    Description: ECS cluster for research tasks
+    Value: !GetAtt ResearchCluster.Arn
+  ResearchTaskDefinitionArn:
+    Description: Fargate task definition for a deep-research run
+    Value: !Ref ResearchTaskDefinition
+  ResearchSubnetId:
+    Description: Public subnet to launch the task in (assignPublicIp=ENABLED)
+    Value: !Ref ResearchSubnet
+  ResearchSecurityGroupId:
+    Description: Security group for the task
+    Value: !GetAtt ResearchSecurityGroup.GroupId
+  ResearchSecretArn:
+    Description: Secrets Manager ARN for ANTHROPIC_API_KEY (set its value once)
+    Value: !Ref ResearchSecret
