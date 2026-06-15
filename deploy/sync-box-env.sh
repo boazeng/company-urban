@@ -20,6 +20,16 @@ WHITELIST=(
   BOAZ_CALENDAR_ICS_URL    # ran -> calendar
   RAN_BOT_TOKEN            # ran -> telegram
   RAN_TELEGRAM_CHAT_ID
+  # deep-research Fargate worker (Phase 3) — from the stack outputs:
+  RESEARCH_ECS_CLUSTER     # comms -> ecs:RunTask (which cluster)
+  RESEARCH_TASK_DEF        # the Fargate task definition arn/family
+  RESEARCH_SUBNET          # public subnet for the task
+  RESEARCH_SG              # security group for the task
+  RESEARCH_POST_TOKEN      # optional: shared secret for /rooms/{id}/post
+  COMMS_PUBLIC_API         # where the worker posts the report back (default https://comms.newavera.co.il)
+  AWS_REGION               # default us-east-1
+  # AWS creds for ecs:RunTask: prefer an EC2 instance role on the box (no keys here).
+  # If you must use static keys instead, add AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY above.
 )
 
 TMP="$(mktemp)"

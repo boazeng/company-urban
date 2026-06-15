@@ -81,8 +81,44 @@ Nothing runs until a task is launched (Phase 3). No NAT gateway, no always-on
 compute → the stack additions are ~$0/idle. A deep-research run is ~$0.04–0.09
 (2 vCPU / 8 GB Fargate, per-second).
 
-## Next — Phase 3 (wiring)
-comms triggers `ecs:RunTask` on a deep request (fast ack), passing the topic +
-room id as container env overrides + `ResearchSubnetId`/`ResearchSecurityGroupId`
-with `assignPublicIp=ENABLED`; the container posts the finished report back via a
-new `POST /rooms/{id}/post` endpoint on the comms backend.
+## Phase 3 — wiring (built; needs box config to go live)
+The wiring is implemented:
+- **comms → Fargate:** `comms/backend/cmd_brain.py` launches `ecs:RunTask` on a deep
+  request (topic + room id as env overrides, public subnet/SG, `assignPublicIp=ENABLED`)
+  and acks immediately. Degrades gracefully (returns a note) if Fargate isn't configured.
+- **report back:** the container POSTs the report to `POST /rooms/{id}/post` on the comms
+  backend (new endpoint) → added as a דפנה message; the UI idle-poll shows it live.
+
+To make it live on the box, after Phase 2 is deployed:
+
+**a. Let the box call ecs:RunTask** — attach to the box's EC2 instance role (preferred, no static keys):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "RunResearchTask", "Effect": "Allow", "Action": "ecs:RunTask",
+      "Resource": "arn:aws:ecs:us-east-1:824980746386:task-definition/company-urban-research-prod:*" },
+    { "Sid": "PassResearchRoles", "Effect": "Allow", "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::824980746386:role/company-urban-stack-*",
+      "Condition": { "StringEquals": { "iam:PassedToService": "ecs-tasks.amazonaws.com" } } }
+  ]
+}
+```
+(No instance role? Make an IAM user with this policy and put its `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in the shared `.env` + the sync whitelist.)
+
+**b. Set the box env** (add to the shared `.env`, then `bash deploy/sync-box-env.sh`) — IDs come from the Phase 2 stack outputs:
+```
+RESEARCH_ECS_CLUSTER=company-urban-research-prod
+RESEARCH_TASK_DEF=company-urban-research-prod
+RESEARCH_SUBNET=<ResearchSubnetId>
+RESEARCH_SG=<ResearchSecurityGroupId>
+AWS_REGION=us-east-1
+RESEARCH_POST_TOKEN=<random string>   # optional; enforced on /post if set
+```
+
+**c. Install boto3** in the box's comms Python env, then restart comms (`deploy-box.sh`
+restarts comms but doesn't pip-install comms deps).
+
+Once a–c are done: `@דפנה תחקרי לעומק …` in a room → instant ack → a Fargate task runs
+the research → the report lands back in the room. Until then, `cmd_brain` sees no
+Fargate config and replies that there's no run target (no harm).

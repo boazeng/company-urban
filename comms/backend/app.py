@@ -6,10 +6,11 @@ so multi-agent meetings (with a chair agent) slot in later without migration.
 
 Run:  uvicorn app:app --port 5181 --reload   (from comms/backend)
 """
+import os
 import re
 import threading
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -57,6 +58,16 @@ class NewParticipant(BaseModel):
 
 class RoomStatus(BaseModel):
     status: str  # 'active' (open) | 'closed' (ended)
+
+
+class AgentPost(BaseModel):
+    agent: str
+    text: str
+
+
+# Optional shared secret for /post (background jobs posting agent messages).
+# If set on the backend AND on the worker, the worker must send it as X-Post-Token.
+RESEARCH_POST_TOKEN = os.environ.get("RESEARCH_POST_TOKEN", "")
 
 
 def _greeting(agent):
@@ -135,6 +146,17 @@ def post_participant(room_id: int, body: NewParticipant):
     # כלל 1 — הסוכן שנוסף מציג את עצמו בכניסתו.
     db.add_message(room_id, body.agent, _greeting(body.agent))
     return {"ok": True}
+
+
+@app.post("/rooms/{room_id}/post")
+def post_agent_message(room_id: int, body: AgentPost, x_post_token: str = Header(default="")):
+    """Internal: a background job (e.g. the Fargate deep-research worker) posts a
+    message into a room as an agent — no reply round is triggered. The idle-poll
+    in the UI surfaces it live. Guarded by X-Post-Token only if RESEARCH_POST_TOKEN is set."""
+    if RESEARCH_POST_TOKEN and x_post_token != RESEARCH_POST_TOKEN:
+        raise HTTPException(403, "bad post token")
+    msg = db.add_message(room_id, body.agent, body.text)
+    return {"ok": True, "message": msg}
 
 
 def _reply_in_room(room_id, agent):

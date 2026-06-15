@@ -43,8 +43,9 @@ ${REPORT}"
     text="(${AGENT}: המחקר נכשל — ${REPORT})"
   fi
   body="$(jq -n --arg a "${AGENT}" --arg t "${text}" '{agent:$a, text:$t}')"
-  if curl -fsS -X POST "${COMMS_API}/rooms/${ROOM_ID}/post" \
-        -H 'Content-Type: application/json' -d "${body}" >/dev/null; then
+  hdr=(-H 'Content-Type: application/json')
+  [ -n "${POST_TOKEN:-}" ] && hdr+=(-H "X-Post-Token: ${POST_TOKEN}")
+  if curl -fsS -X POST "${COMMS_API}/rooms/${ROOM_ID}/post" "${hdr[@]}" -d "${body}" >/dev/null; then
     echo "→ posted report to room ${ROOM_ID}"
   else
     echo "→ postback failed (non-fatal)"

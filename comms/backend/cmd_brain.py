@@ -40,6 +40,48 @@ ALLOW_BOX_DEEP_RESEARCH = os.environ.get("ALLOW_BOX_DEEP_RESEARCH", "") == "1"
 _deep_lock = threading.Lock()
 _deep_running = False
 
+# ── Fargate per-job (preferred): deep research runs in an isolated ECS task ──
+# Config comes from the stack outputs, set in the box env (see AWS-SETUP.md).
+ECS_CLUSTER = os.environ.get("RESEARCH_ECS_CLUSTER", "")
+ECS_TASKDEF = os.environ.get("RESEARCH_TASK_DEF", "")
+ECS_SUBNET = os.environ.get("RESEARCH_SUBNET", "")
+ECS_SG = os.environ.get("RESEARCH_SG", "")
+ECS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+ECS_CONTAINER = os.environ.get("RESEARCH_CONTAINER", "research")
+COMMS_PUBLIC_API = os.environ.get("COMMS_PUBLIC_API", "https://comms.newavera.co.il")
+RESEARCH_POST_TOKEN = os.environ.get("RESEARCH_POST_TOKEN", "")  # optional postback auth
+
+
+def _fargate_configured():
+    return all([ECS_CLUSTER, ECS_TASKDEF, ECS_SUBNET, ECS_SG])
+
+
+def _launch_fargate_research(topic, room_id):
+    """Launch a one-off Fargate task that runs the deep research and posts the
+    report back to the room. Returns nothing; raises on failure."""
+    import boto3  # lazy — only needed when Fargate is configured
+    env = [
+        {"name": "TOPIC", "value": topic},
+        {"name": "CMD", "value": "/dafna"},
+        {"name": "AGENT", "value": "דפנה"},
+        {"name": "COMMS_API", "value": COMMS_PUBLIC_API},
+        {"name": "ROOM_ID", "value": str(room_id) if room_id is not None else ""},
+    ]
+    if RESEARCH_POST_TOKEN:
+        env.append({"name": "POST_TOKEN", "value": RESEARCH_POST_TOKEN})
+    boto3.client("ecs", region_name=ECS_REGION).run_task(
+        cluster=ECS_CLUSTER,
+        taskDefinition=ECS_TASKDEF,
+        launchType="FARGATE",
+        count=1,
+        overrides={"containerOverrides": [{"name": ECS_CONTAINER, "environment": env}]},
+        networkConfiguration={"awsvpcConfiguration": {
+            "subnets": [ECS_SUBNET],
+            "securityGroups": [ECS_SG],
+            "assignPublicIp": "ENABLED",
+        }},
+    )
+
 
 def has_agent(agent):
     return agent in COMMANDS
@@ -108,11 +150,20 @@ def make_chat(agent):
         message = _last_user(history)
         # סוכן-מחקר כבד + בקשת עומק.
         if agent in HEAVY and _wants_deep(message):
+            # 1) מועדף — Fargate per-job: רץ מבודד, מאשר מיד, שולח דוח כשמסיים.
+            if _fargate_configured():
+                try:
+                    _launch_fargate_research(message, room_id)
+                    return ("קיבלתי — מתחילה **מחקר מעמיק** (רץ מבודד על Fargate). "
+                            "ייקח זמן (עד חצי שעה ויותר); אני עובדת ברקע והדוח יישלח לכאן כשמוכן.")
+                except Exception as e:  # noqa: BLE001
+                    return f"(לא הצלחתי לשגר את המחקר ל-Fargate: {e})"
+            # 2) על הקופסה — רק אם הופעל במפורש (קופסה עם זיכרון פנוי).
             if not ALLOW_BOX_DEEP_RESEARCH:
-                # שרת ה-comms קטן מכדי להריץ מחקר עומק (30 דק׳+) בלי להיחנק.
-                return ("קיבלתי שזו בקשת **מחקר מעמיק**. כרגע מחקר עומק לא רץ על שרת ה-comms "
-                        "(הוא קטן מדי ועלול להיחנק). אפשר להריץ אותו כעבודה ייעודית במכונה "
-                        "מתאימה — `/dafna <נושא> דוח מלא`. בינתיים אני זמינה לשאלות מהירות.")
+                # שרת ה-comms קטן מכדי להריץ מחקר עומק (30 דק׳+) בלי להיחנק, ו-Fargate לא מוגדר.
+                return ("קיבלתי שזו בקשת **מחקר מעמיק**. כרגע אין יעד הרצה מוגדר (Fargate לא מחובר, "
+                        "והרצה על שרת ה-comms כבויה כי הוא קטן מדי). אפשר להריץ ידנית: "
+                        "`/dafna <נושא> דוח מלא` במכונה מתאימה. בינתיים אני זמינה לשאלות מהירות.")
             with _deep_lock:
                 if _deep_running:
                     return "כבר רץ מחקר מעמיק כרגע — אסיים אותו ואז אפשר להזמין את הבא."

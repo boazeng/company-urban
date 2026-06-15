@@ -1,3 +1,4 @@
 fastapi
 uvicorn[standard]
 requests
+boto3   # ecs:RunTask — launch the deep-research Fargate worker (Phase 3)
