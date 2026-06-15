@@ -6,16 +6,18 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // Self-destroying service worker. The dashboard reads live data and gained
+      // nothing from offline precaching — but the SW's navigation fallback kept
+      // serving the SPA shell for /reports/* (report links landed on the dashboard)
+      // and pinned stale bundles, requiring manual "Clear site data". This ships a
+      // SW that unregisters itself and clears its caches on every browser that has
+      // the old one, then leaves no SW behind — so reports + the dashboard always
+      // load from the network. (Re-introduce a /app-scoped PWA later if the mobile
+      // app needs installability/offline.)
+      selfDestroying: true,
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       includeAssets: ['apple-touch-icon.png'],
-      // The agents' static report HTML lives under /reports/. Without this the
-      // service worker's navigation fallback served the SPA's index.html for
-      // those URLs — so a report link landed on the dashboard instead of the
-      // report. Exclude /reports/ so those navigations hit the real files.
-      workbox: {
-        navigateFallbackDenylist: [/^\/reports\//],
-      },
       manifest: {
         name: 'company framework',
         short_name: 'Tasks',
