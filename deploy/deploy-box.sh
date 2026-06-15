@@ -26,6 +26,7 @@ echo "→ [1/4] syncing vault subset (tar-over-ssh, with excludes — no rsync n
 tar czf - \
   --exclude='__pycache__' --exclude='*.pyc' --exclude='*.bak' \
   --exclude='.venv' --exclude='node_modules' \
+  --exclude='comms.db' --exclude='comms.db-wal' --exclude='comms.db-shm' \
   comms .claude/commands Agents goals brands structure interfaces deploy \
   | "${SSH[@]}" "mkdir -p '$DEST' && tar xzf - -C '$DEST'"
 
